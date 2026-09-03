@@ -1,4 +1,4 @@
-.PHONY: check test demo headless ring
+.PHONY: check test demo headless ring ring-windowed
 
 check:
 	cargo check --workspace
@@ -12,6 +12,11 @@ demo:
 headless:
 	cargo run -p qga-gpu-demo --release -- --headless --frames 8
 
-# Particles dirty every frame: ring_copies should track frames.
+# Dirty particles, 300 frames. Headless captures first+last only so map_async
+# stays in flight (capture Wait would hide ring pressure).
 ring:
-	cargo run -p qga-gpu-demo --release -- --headless --frames 8 --dirty-particles
+	cargo run -p qga-gpu-demo --release -- --headless --frames 300 --dirty-particles
+
+# FIFO/mailbox presents; no capture. Exits after 300 frames.
+ring-windowed:
+	cargo run -p qga-gpu-demo --release -- --dirty-particles --frames 300

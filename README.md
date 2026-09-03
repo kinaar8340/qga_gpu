@@ -30,9 +30,11 @@ Vulkan through `wgpu` only. No OpenGL. CUDA is out of scope for v0.
 ## Build
 
 ```bash
-make check      # cargo check --workspace && cargo test -p qga-gpu
-make demo       # windowed
-make headless   # 8 offscreen frames; requires static_uploads == 1
+make check          # cargo check --workspace && cargo test -p qga-gpu
+make demo           # windowed
+make headless       # 8 offscreen frames; requires static_uploads == 1
+make ring           # 300 dirty frames, headless (in-flight map_async)
+make ring-windowed  # 300 dirty frames, windowed FIFO/mailbox, then exit
 ```
 
 ```bash
@@ -40,9 +42,12 @@ cargo check --workspace
 cargo test -p qga-gpu
 cargo run -p qga-gpu-demo --release
 cargo run -p qga-gpu-demo --release -- --headless --frames 8
+cargo run -p qga-gpu-demo --release -- --dirty-particles
+cargo run -p qga-gpu-demo --release -- --dirty-particles --frames 300
 ```
 
 Demo window: LMB orbit, wheel zoom, `C` cinematic, `G` glow, Space pause, Esc quit.
+`--dirty-particles` nudges the 4k field every frame. `--frames N` exits after N presents (windowed or headless).
 
 The default demo has **no path to `qga_engine`**. Optional `--features qga-math`
 on `qga-gpu` adds `From<&qga_math::Fiber>` and needs a local engine checkout.
@@ -82,8 +87,13 @@ arena). Profile `ring_copies` vs `particle_fallbacks` on this 4090 before
 meshlets. Dirty-every-frame smoke:
 
 ```bash
-cargo run -p qga-gpu-demo --release -- --headless --frames 8 --dirty-particles
+make ring            # 300 frames headless; capture first+last only
+make ring-windowed   # 300 presents; mailbox/FIFO in-flight
+cargo run -p qga-gpu-demo --release -- --headless --frames 300 --dirty-particles
+cargo run -p qga-gpu-demo --release -- --dirty-particles --frames 300
 ```
+
+Headless capture used to `Wait` every frame, which hid ring pressure (`particle_fallbacks` stayed 0). First+last capture only; windowed `--dirty-particles` is the mailbox test.
 
 **Live vs static fibers.** Static separator / torus: `retain_static_fibers`.
 Live harmonics: `write_live_fibers` (same hash+radius no-op). Tubes are

@@ -4,7 +4,8 @@
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3};
 use qga_gpu::{
-    hud_text, Camera, GpuContext, GpuHub, GpuParticle, HudVert, Mesh, Renderer, VisualState,
+    hud_text, Camera, GpuContext, GpuHub, GpuParticle, HudVert, Mesh, Renderer, UploadStats,
+    VisualState,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -57,6 +58,45 @@ fn scene_meshes() -> Vec<Mesh> {
             .colored([1.00, 0.40, 0.20]),
         Mesh::torus(1.05, 0.03).colored([0.95, 0.85, 0.20]),
     ]
+}
+
+fn nudge_particles(parts: &mut [GpuParticle], tick: u32) {
+    let dy = 1.0e-4 * (tick as f32 + 1.0);
+    for p in parts {
+        p.pos[1] += dy;
+    }
+}
+
+fn report_stats(
+    frames: u32,
+    last_bytes: usize,
+    s: UploadStats,
+    dirty_particles: bool,
+) -> Result<()> {
+    let wb = s.write_buffer_calls;
+    let rc = s.ring_copies;
+    let su = s.static_uploads;
+    let ss = s.static_skipped;
+    let ls = s.live_skipped;
+    let ps = s.particle_skipped;
+    let pg = s.particle_grows;
+    let pf = s.particle_fallbacks;
+    println!(
+        "done frames={frames} capture_bytes={last_bytes} write_buffer={wb} ring_copies={rc} static_uploads={su} static_skipped={ss} live_skipped={ls} particle_skipped={ps} particle_grows={pg} particle_fallbacks={pf}"
+    );
+    anyhow::ensure!(
+        su == 1,
+        "static fiber buffers were written {su} times; expected static_uploads == 1"
+    );
+    if dirty_particles {
+        anyhow::ensure!(ps == 0, "dirty particles must not hash-skip ({ps})");
+        let landed = rc + pf;
+        anyhow::ensure!(
+            landed >= u64::from(frames),
+            "ring_copies={rc} fallbacks={pf} expected >= {frames} dirty writes"
+        );
+    }
+    Ok(())
 }
 
 fn spawn_particles() -> Vec<GpuParticle> {
@@ -122,15 +162,15 @@ fn run_headless(frames: u32, dirty_particles: bool) -> Result<()> {
     renderer.retain_meshes(&gpu, &scene_meshes(), 1)?;
 
     let mut last_bytes = 0usize;
-    for i in 0..frames.max(1) {
+    let n = frames.max(1);
+    for i in 0..n {
         if dirty_particles {
-            let dy = 1.0e-4 * (i as f32 + 1.0);
-            for p in &mut particles {
-                p.pos[1] += dy;
-            }
+            nudge_particles(&mut particles, i);
         }
         renderer.write_particles(&gpu, &particles)?;
-        let captured = renderer.render(&mut gpu, &camera, &vis, i as f32 * 0.016, true)?;
+        // Capture first + last only. Mid-run Wait would hide in-flight map_async.
+        let grab = i == 0 || i + 1 == n;
+        let captured = renderer.render(&mut gpu, &camera, &vis, i as f32 * 0.016, grab)?;
         if let Some(frame) = captured {
             last_bytes = frame.bgra.len();
             if i == 0 {
@@ -141,30 +181,7 @@ fn run_headless(frames: u32, dirty_particles: bool) -> Result<()> {
             }
         }
     }
-    let s = renderer.upload_stats();
-    let wb = s.write_buffer_calls;
-    let rc = s.ring_copies;
-    let su = s.static_uploads;
-    let ss = s.static_skipped;
-    let ls = s.live_skipped;
-    let ps = s.particle_skipped;
-    let pg = s.particle_grows;
-    let pf = s.particle_fallbacks;
-    println!(
-        "done frames={frames} capture_bytes={last_bytes} write_buffer={wb} ring_copies={rc} static_uploads={su} static_skipped={ss} live_skipped={ls} particle_skipped={ps} particle_grows={pg} particle_fallbacks={pf}"
-    );
-    anyhow::ensure!(
-        su == 1,
-        "static fiber buffers were written {su} times; expected static_uploads == 1"
-    );
-    if dirty_particles {
-        anyhow::ensure!(ps == 0, "dirty particles must not hash-skip ({ps})");
-        anyhow::ensure!(
-            rc >= u64::from(frames),
-            "ring_copies={rc} expected >= {frames} when particles are dirty every frame"
-        );
-    }
-    Ok(())
+    report_stats(n, last_bytes, renderer.upload_stats(), dirty_particles)
 }
 
 struct App {
@@ -178,10 +195,13 @@ struct App {
     time: f32,
     lmb: bool,
     cursor: [f32; 2],
+    dirty_particles: bool,
+    frame_limit: u32,
+    frames_drawn: u32,
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(dirty_particles: bool, frame_limit: u32) -> Self {
         Self {
             window: None,
             gpu: None,
@@ -198,12 +218,20 @@ impl App {
             time: 0.0,
             lmb: false,
             cursor: [0.0, 0.0],
+            dirty_particles,
+            frame_limit,
+            frames_drawn: 0,
         }
     }
 
     fn boot(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
+        let title = if self.dirty_particles {
+            "qga-gpu-demo (dirty particles)"
+        } else {
+            "qga-gpu-demo"
+        };
         let attrs = Window::default_attributes()
-            .with_title("qga-gpu-demo")
+            .with_title(title)
             .with_inner_size(winit::dpi::PhysicalSize::new(1280u32, 720u32));
         let window = Arc::new(event_loop.create_window(attrs)?);
         let gpu = GpuContext::init_windowed(window.clone())?;
@@ -220,18 +248,32 @@ impl App {
         Ok(())
     }
 
-    fn tick(&mut self) -> Result<()> {
+    /// `Ok(false)` means hit `--frames` and the loop should exit.
+    fn tick(&mut self) -> Result<bool> {
         let dt = self.last.elapsed().as_secs_f32().clamp(0.0, 0.05);
         self.last = Instant::now();
         if !self.vis.paused {
             self.time += dt;
             self.camera.tick_cinematic(dt);
         }
+        if self.dirty_particles {
+            nudge_particles(&mut self.particles, self.frames_drawn);
+        }
         let gpu = self.gpu.as_mut().context("gpu")?;
         let renderer = self.renderer.as_mut().context("renderer")?;
         renderer.write_particles(gpu, &self.particles)?;
         renderer.render(gpu, &self.camera, &self.vis, self.time, false)?;
-        Ok(())
+        self.frames_drawn += 1;
+        if self.frame_limit > 0 && self.frames_drawn >= self.frame_limit {
+            report_stats(
+                self.frames_drawn,
+                0,
+                renderer.upload_stats(),
+                self.dirty_particles,
+            )?;
+            return Ok(false);
+        }
+        Ok(true)
     }
 }
 
@@ -254,11 +296,14 @@ impl ApplicationHandler for App {
                     self.camera.aspect = size.width as f32 / size.height.max(1) as f32;
                 }
             }
-            WindowEvent::RedrawRequested => {
-                if let Err(e) = self.tick() {
+            WindowEvent::RedrawRequested => match self.tick() {
+                Ok(true) => {}
+                Ok(false) => event_loop.exit(),
+                Err(e) => {
                     log::error!("frame: {e:#}");
+                    event_loop.exit();
                 }
-            }
+            },
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left {
                     self.lmb = state == ElementState::Pressed;
@@ -307,10 +352,10 @@ impl ApplicationHandler for App {
     }
 }
 
-fn run_windowed() -> Result<()> {
+fn run_windowed(dirty_particles: bool, frames: u32) -> Result<()> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::new();
+    let mut app = App::new(dirty_particles, frames);
     event_loop.run_app(&mut app)?;
     Ok(())
 }
@@ -321,6 +366,6 @@ fn main() -> Result<()> {
     if args.headless {
         run_headless(args.frames, args.dirty_particles)
     } else {
-        run_windowed()
+        run_windowed(args.dirty_particles, args.frames)
     }
 }
