@@ -1,6 +1,6 @@
 use qga_gpu::{
-    copy_bytes_per_row_bgra, particle_ring_need_bytes, FaceVert, FiberMeta, FrameUniforms,
-    GpuFiberPoint, GpuHub, GpuOrbInstance, GpuParticle, HudVert, LineVert,
+    capture_staging_bytes, copy_bytes_per_row_bgra, particle_ring_need_bytes, FaceVert, FiberMeta,
+    FrameUniforms, GpuFiberPoint, GpuHub, GpuOrbInstance, GpuParticle, HudVert, LineVert,
 };
 use std::mem::size_of;
 
@@ -85,10 +85,24 @@ fn capture_row_pitch_is_256() {
     assert_eq!(copy_bytes_per_row_bgra(1920), 7680);
     assert_eq!(copy_bytes_per_row_bgra(1280), 5120);
     assert_eq!(copy_bytes_per_row_bgra(800), 3328);
-    // Packed vs padded: 800-wide BGRA is 3200 dense, 3328 in the staging buffer.
     assert_ne!(800 * 4, copy_bytes_per_row_bgra(800));
     assert_eq!(1920 * 4, copy_bytes_per_row_bgra(1920));
     assert_eq!(1280 * 4, copy_bytes_per_row_bgra(1280));
+    // 3200 is dense 800-wide BGRA — illegal as encoder bytes_per_row.
+    assert_ne!(3200 % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 0);
+    assert_eq!(3328 % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 0);
+}
+
+#[test]
+fn capture_staging_is_padded_rows_and_map_aligned() {
+    let (w, h) = (800u32, 1080u32);
+    let bytes = capture_staging_bytes(w, h);
+    assert_eq!(bytes, 3328 * 1080);
+    assert_ne!(bytes, u64::from(w) * 4 * u64::from(h));
+    assert_eq!(bytes % wgpu::MAP_ALIGNMENT, 0);
+    assert_eq!(capture_staging_bytes(1920, 1080), 1920 * 4 * 1080);
+    // Origin 0 is required for our BGRA8 full-frame copy; offset 4 would be
+    // legal for RGBA8 block size 1 but Metal wants 16 on some copies — stay 0.
 }
 
 #[test]

@@ -1177,6 +1177,7 @@ impl Renderer {
             };
             if let Some(color) = src {
                 if let Some(staging) = color.staging.as_ref() {
+                    // Encoder texture copy: padded_bpr % 256, origin ZERO, samples 1.
                     encoder.copy_texture_to_buffer(
                         wgpu::TexelCopyTextureInfo {
                             texture: &color.tex,
@@ -1608,7 +1609,7 @@ fn make_color_target(
     let staging = if with_staging {
         Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("capture-staging"),
-            size: padded_bpr as u64 * height as u64,
+            size: crate::types::capture_staging_bytes(width, height),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         }))

@@ -11,10 +11,16 @@ const _: () = assert!(std::mem::size_of::<GpuOrbInstance>() == 32);
 const _: () = assert!(std::mem::size_of::<GpuParticle>() as u64 % 8 == 0);
 const _: () = assert!(std::mem::size_of::<GpuParticle>() as u64 % 4 == 0);
 
-/// BGRA8 `bytes_per_row` for `copy_*_texture`. Portable pitch is 256, not 4/8.
+/// BGRA8 `bytes_per_row` for `copy_*_texture`. Not used by `Queue::write_texture`.
 pub fn copy_bytes_per_row_bgra(width: u32) -> u32 {
     let unpadded = width.saturating_mul(4);
     unpadded.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
+}
+
+/// MAP_READ capture buffer size: padded rows × height. Not `width * 4 * height`
+/// unless those match (1920/1280); 800-wide is 3328 × h.
+pub fn capture_staging_bytes(width: u32, height: u32) -> u64 {
+    u64::from(copy_bytes_per_row_bgra(width)) * u64::from(height)
 }
 
 /// Bytes to map/copy for `n` particles. 0 means do not map (`map_async` size 0).

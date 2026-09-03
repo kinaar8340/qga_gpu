@@ -335,27 +335,68 @@ the particle VB (dest offset % 256).
 Uniform 256 B is a **bind** rule, not a copy rule: you can `write_buffer` 64 B
 into a 256 B UBO; you cannot bind a 64 B std140 range on all backends.
 
-There is no mapped texture. CPU → GPU color is either `Queue::write_texture`
-(impl staging, pending-writes, **caller layout may be dense**; wgpu may pad
-internally — D3D12 256, Metal 16) or a mapped buffer +
-`copy_buffer_to_texture` where **you** set `bytes_per_row` to a multiple of
-256. Dense 1920×4 = 7680 is 256-aligned; 1280×4 = 5120 is; 800×4 = 3200 pads
-to **3328**. Last row may be dense; intervening rows include pad.
+## Texture pitch, origin, block size (Software fact)
 
-This crate’s capture is the *out* path: `copy_texture_to_buffer` +
-`padded_bpr` + `map_async(Read)` + `Wait` on first/last only, then copy
-row-by-row into packed BGRA. Do not tighten pitch below 256. Bloom/post
-textures are GPU-only (`TEXTURE | COPY_SRC` for capture) — do not stage them
-from CPU. Offscreen 1920×1080 BGRA: packed 8 294 400 B equals padded at that
-width. Awkward widths are where padding shows.
+Texture alignment is **block geometry + row pitch**. It is not
+`COPY_BUFFER_ALIGNMENT` / `MAP_ALIGNMENT`. This crate only hits BGRA8
+capture. Compressed and depth have extra rules we do not use yet.
 
-`write_texture` for one blit/frame; belt + `copy_buffer_to_texture` only if
-streaming many mips/layers (`chunk_size` ≥ padded image).
-`create_texture_with_data` is `write_texture` per mip/layer — load-once.
+| | `Queue::write_texture` | `copy_buffer_to_texture` / `copy_texture_to_buffer` |
+|--|------------------------|-----------------------------------------------------|
+| `bytes_per_row` % 256 | **not required** (impl pads) | **required** |
+| Buffer `offset` | % block size (1 for RGBA8; 4 for depth/stencil aspect) | same |
+| Origin x/y | % block width/height | same |
+| Copy size w/h | % block, or flush to subresource edge | same |
+| Sample count | 1 | 1 |
+| Usage | `COPY_DST` | `COPY_DST` / `COPY_SRC` |
 
-Refuse: map range not multiple of 8; `copy_buffer_to_buffer` of 2 bytes;
-`copy_texture_to_buffer` with `bytes_per_row = width * 4` when that is 3200.
-The ring never hits those if caps stay `max(32, next_pow2(n * 32))`.
+256 B row pitch is WebGPU/D3D12 portable. Vulkan would allow tighter; wgpu
+will not on the **encoder** path. `write_texture` sets `aligned=false` and
+row-copies into padded staging internally.
+
+BGRA8 / RGBA8 block = 1×1 texel, 4 bytes:
+
+```text
+dense_bpr   = width * 4
+padded_bpr  = ceil(dense_bpr / 256) * 256     // copy_*_texture only
+buffer_size = padded_bpr * height              // 2D
+```
+
+| width | dense | padded |
+|-------|-------|--------|
+| 1920 | 7680 | 7680 |
+| 1280 | 5120 | 5120 |
+| 800 | 3200 | **3328** |
+
+Last row in the spec may be dense; the buffer still reserves a full padded
+stride per row. CPU pack walks `src += padded_bpr`, writes `width * 4`.
+`rows_per_image` is required when depth/layers > 1; 2D capture uses height.
+Capture offset 0 (Metal wants 16 on some buffer–texture copies; 0 is safe).
+Do not start a capture plane at offset 4.
+
+Origin ZERO, full `Extent3d { width, height, 1 }`. RGBA8 block 1×1: any
+pixel origin is legal. Compressed (BC1/BC3): 4×4 blocks; origin and copy
+size in texels % 4 except a copy that hits the mip edge; `bytes_per_row` =
+blocks_across × block_bytes, then pad to 256 for encoder copies. wgpu docs:
+32×16 RGBA8 encoder copy → dense 128, **padded 256**.
+
+Depth/stencil: one aspect at a time; offset alignment **4**. MSAA
+(`sample_count > 1`): buffer copies forbidden — resolve first. Do not reuse
+`copy_bytes_per_row_bgra` for D32.
+
+Capture: `copy_texture_to_buffer` with `bytes_per_row =
+copy_bytes_per_row_bgra(width)`, origin 0, full extent, 4 B/pixel, samples 1.
+Staging size = `capture_staging_bytes` = `padded_bpr * height`, MAP_READ.
+Mapping that buffer is a **buffer** 8-byte rule; `3328 * h` is % 8.
+`3200 * h` would be legal to **map** but illegal as `bytes_per_row`.
+Color/bloom: GPU-only until capture (`COPY_SRC` if read back). CPU image
+upload if ever: one shot → `write_texture` dense; streaming mips → pad 256
+and `copy_buffer_to_texture`. Do not put particles in a texture.
+
+Illegal: `bytes_per_row = 3200` on encoder copy; capture origin (1,0) on a
+BC texture; `write_texture` of MSAA; mapping the capture buffer at offset 1.
+BGRA8 full-frame origin 0 + padded pitch is the whole texture-alignment
+surface this renderer has.
 
 `tests/layout.rs` pins both worlds: `size_of` % 4 and % 8; partial map
 `particle_ring_need_bytes(n) = n × 32` for odd `n`; empty `n = 0` is 0 and
