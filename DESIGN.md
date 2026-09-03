@@ -507,6 +507,67 @@ runtime scope; it keeps the happy path from constructing illegal numbers.
 Grep strings (`UnalignedBytesPerRow`, `UnalignedOffset`) are `Display` text;
 the **enum** is the API. There are no hex codes.
 
+### `Error::Validation` source chain (Software fact)
+
+A `Validation` is a wrapper. The useful part is the `source` chain: API call
+context → wgpu-core enum → (sometimes) naga or a usage tracker. There is
+**no** `VkResult` at the bottom; HAL failures are `Internal` or `OutOfMemory`.
+
+```text
+wgpu-core fn returns E: WebGpuError
+  E.webgpu_error_type() == Validation
+frontend: ContextError { fn_ident, source: E, label }
+Error::Validation { source: Box<ContextError>, description: format_tree }
+→ error scope if filter matches
+→ else on_uncaptured_error / panic
+```
+
+`description` is the indented `Display` tree (`In CommandEncoder::copy_texture_to_buffer` / `Copy error` / `Bytes per row does not respect COPY_BYTES_PER_ROW_ALIGNMENT`). `source()` walks the same tree. `fn_ident` is the public method; `label` is the resource debug label if any.
+
+| Layer | Type | What it checks |
+|-------|------|----------------|
+| Frontend | `ContextError` | which API call |
+| Transfer | `TransferError` | copies, pitch, origin, usage bits |
+| Buffer access | `BufferAccessError` | map range, 8/4, already-mapped |
+| Buffer create | `CreateBufferError` | size % 4, usage combo, max size |
+| Texture create | `CreateTextureError` | format, usage, samples, limits |
+| Usage tracker | `Missing*Usage`, encode-scope | `COPY_SRC` vs `VERTEX`, submit-while-mapped |
+| Init tracker | `MemoryInitFailure` | use-before-init |
+| Bind / pipeline | `BindingError`, `Create*PipelineError` | layout vs shader |
+| Shader stage | `validation::StageError` | naga I/O vs pipeline |
+| Shader parse | naga | WGSL |
+| Device | `DeviceError` | lost / OOM (**usually not** Validation) |
+| HAL | `hal::DeviceError` | driver; Internal/OOM |
+
+`wgpu_core::validation` is **shader interface** (bindings, varyings, workgroup), not copy pitch. Pitch lives in `transfer.rs`.
+
+This crate can hit: ring `BufferAccessError::Unaligned*` / `MapAlreadyPending` / `MissingBufferUsage` (map dest VB); `CreateBufferError::UsageMismatch` / `UnalignedSize`; `TransferError::UnalignedCopySize` on ring copy; submit-while-mapped; capture `UnalignedBytesPerRow` / `InvalidBytesPerRow` / overrun / `MissingTextureUsage`. Draw: `StageError::Binding` if UBO 256 vs shader drifts; pipeline format mismatches. Shader modules fail at **create_shader_module**, not at draw.
+
+Not a validation source: `map_async` `Err(BufferAsyncError)`; `particle_fallbacks`; `vkMapMemory` HAL fail; present-mode warn `Unrecognized present mode 1000361000`.
+
+Do **not** add `wgpu-core` as a dependency to downcast `TransferError`. Tests grep `description` (e.g. `UnalignedBytesPerRow`). Debug dump:
+
+```rust
+fn dump(err: &wgpu::Error) {
+    match err {
+        wgpu::Error::Validation { description, source } => {
+            eprintln!("{description}");
+            let mut s: Option<&dyn std::error::Error> = Some(source.as_ref());
+            while let Some(e) = s {
+                eprintln!("  source: {e}");
+                s = e.source();
+            }
+        }
+        other => eprintln!("{other}"),
+    }
+}
+```
+
+Policy: validation sources are encode-time contracts. Lock numbers in
+`layout.rs`; default uncaptured handler panics. A debug scope around capture
+logs `description` and leaves. Do not branch on `TransferError` in
+`write_particles`.
+
 ### Error scopes (Software fact — not used on the hot path)
 
 Scopes are a LIFO **filter stack on the device**, per **OS thread**. They

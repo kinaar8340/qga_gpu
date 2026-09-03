@@ -143,9 +143,10 @@ Software fact:
 - Buffer copies/maps: 4 B / 8 B. Texture `bytes_per_row`: **256 B** (capture).
   That pitch is WebGPU-on-Vulkan, not the 4090’s optimal tiling.
 - wgpu validation is an enum tree (`BufferAccessError`, `TransferError`), not
-  `VkResult`. `layout.rs` keeps illegal numbers off the upload path.
+  `VkResult`. The `source` chain is ContextError → wgpu-core; HAL is
+  Internal/OOM. `layout.rs` keeps illegal numbers off the upload path.
   `particle_fallbacks` is not a validation error. No per-frame error scopes;
-  uncaptured validation panics.
+  uncaptured validation panics. Do not add wgpu-core just to downcast.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
 ## What this crate is not

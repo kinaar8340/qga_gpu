@@ -14,6 +14,7 @@ This crate owns the frame.
 - wgpu textures are optimal-tiled; padded_bpr is WebGPU-on-Vulkan tax, not vkGetImageSubresourceLayout.
 - wgpu has no VkResult table. Validation panics. particle_fallbacks is a ready-slot miss, not Unaligned*.
 - No per-frame error scopes. Drop without pop discards. Do not scope write_particles.
+- Do not depend on wgpu-core to downcast TransferError. Grep description. No VkResult under Validation.
 - Vulkan via wgpu only. No OpenGL. CUDA is out of scope for v0.
 
 ## Target machine
