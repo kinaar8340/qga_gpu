@@ -281,6 +281,59 @@ Keep DEST DEVICE_LOCAL. One graphics submit per present until
 `write_buffer_calls` per frame is tens, or you stream megabytes before the
 pass.
 
+## Alignment and texture staging (Software fact)
+
+Portable wgpu constants. Ring records sit on the easy side. Capture pays the
+256 B **row** tax.
+
+| Constant | Value | Applies to |
+|----------|-------|------------|
+| `COPY_BUFFER_ALIGNMENT` | **4** | `copy_buffer_to_buffer` offset + size; `clear_buffer`; `mapped_at_creation` size |
+| `MAP_ALIGNMENT` | **8** | `map_async` / `get_mapped_range` offset + size |
+| `VERTEX_STRIDE_ALIGNMENT` | **4** | vertex stride / offset |
+| Uniform bind offset | **256** | dynamic offset; this crate pads the whole UBO to 256 B |
+| Storage binding size | **4** | SSBO size multiple |
+| `QUERY_RESOLVE_BUFFER_ALIGNMENT` | **256** | query resolve dest |
+| `COPY_BYTES_PER_ROW_ALIGNMENT` | **256** | **only** `copy_*_texture` `bytes_per_row`, not `Queue::write_texture` |
+
+`create_buffer_init` rounds content length up to a multiple of 4. StagingBelt
+asserts copy size/offset % 4 == 0 and map align ≥ 8.
+
+| Record | Size | Legal because |
+|--------|------|----------------|
+| Frame uniforms | 256 B | UBO + copy + map |
+| Particle / fiber / hub / orb | 32 B | 32 % 8 == 0, 32 % 4 == 0 |
+| Fiber meta | 16 B | 16 % 8 == 0 |
+| Particle slot cap | 128 KiB | both |
+| Ring copy `need` | `n * 32` | always % 8 |
+
+Do not upload an odd-sized HUD `Vec` without padding the **buffer copy size**
+to 4. Mapping `0..need` is valid when `need % 8 == 0`. Mapping `0..12` is not.
+Uniform 256 B is a **bind** rule, not a copy rule: you can `write_buffer` 64 B
+into a 256 B UBO; you cannot bind a 64 B std140 range on all backends.
+
+There is no mapped texture. CPU → GPU color is either `Queue::write_texture`
+(impl staging, pending-writes, **caller layout may be dense**; wgpu may pad
+internally — D3D12 256, Metal 16) or a mapped buffer +
+`copy_buffer_to_texture` where **you** set `bytes_per_row` to a multiple of
+256. Dense 1920×4 = 7680 is 256-aligned; 1280×4 = 5120 is; 800×4 = 3200 pads
+to **3328**. Last row may be dense; intervening rows include pad.
+
+This crate’s capture is the *out* path: `copy_texture_to_buffer` +
+`padded_bpr` + `map_async(Read)` + `Wait` on first/last only, then copy
+row-by-row into packed BGRA. Do not tighten pitch below 256. Bloom/post
+textures are GPU-only (`TEXTURE | COPY_SRC` for capture) — do not stage them
+from CPU. Offscreen 1920×1080 BGRA: packed 8 294 400 B equals padded at that
+width. Awkward widths are where padding shows.
+
+`write_texture` for one blit/frame; belt + `copy_buffer_to_texture` only if
+streaming many mips/layers (`chunk_size` ≥ padded image).
+`create_texture_with_data` is `write_texture` per mip/layer — load-once.
+
+Refuse: map range not multiple of 8; `copy_buffer_to_buffer` of 2 bytes;
+`copy_texture_to_buffer` with `bytes_per_row = width * 4` when that is 3200.
+The ring never hits those if caps stay `max(32, next_pow2(n * 32))`.
+
 ## Upload contract (from inner_cone)
 
 1. Tessellate static topology once (parametric sphere / cone / torus).

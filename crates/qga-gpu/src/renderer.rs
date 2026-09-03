@@ -1597,6 +1597,7 @@ fn make_color_target(
             },
         ],
     });
+    // Texture copies only: bytes_per_row multiple of 256. Buffer copies stay at 4/8.
     let unpadded = width * 4;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
     let padded_bpr = unpadded.div_ceil(align) * align;

@@ -10,6 +10,7 @@ This crate owns the frame.
 - Do not copy realm, cosmos n-body, oam PDE, or reveal Lorenz scenes.
 - Claim labels: Theorem / Model / Software fact / Open. Renderer claims are Software fact.
 - Frame uniforms 256-byte aligned. Particle and fiber records 32 bytes.
+- Buffer copy/map: 4 / 8. Texture copy rows: 256. Capture uses padded_bpr.
 - Vulkan via wgpu only. No OpenGL. CUDA is out of scope for v0.
 
 ## Target machine
