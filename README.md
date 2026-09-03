@@ -98,10 +98,11 @@ Acceptance (dirty): `ring_copies + particle_fallbacks >= frames`,
 and counted**. This 4090: headless 300 first+last-capture → 1 fallback
 (CPU ahead of `map_async`); windowed FIFO 300 → 0 fallbacks (present
 paces reclaim). That is DMA into DEVICE_LOCAL, not a broken ring. Do not
-add a 4th slot unless windowed fallbacks exceed ~1%. Do not
-persist-map the particle VB through wgpu. Do not put particles
-on `StagingBelt` (one 128 KiB blit/frame). A 16 KiB belt is only
-for a future HUD/hub storm of tens of small copies per present.
+add a 4th slot unless windowed fallbacks exceed ~1%. Do not persist-map the particle VB through wgpu. Do not
+`poll(Wait)` on write maps (`map_async` latency is 1–3 GPU frames;
+Wait serializes them). Do not put particles on `StagingBelt`.
+A 16 KiB belt is only for a future HUD/hub storm of tens of small
+copies per present.
 Frame loop is one encoder + one `submit` (pending-writes then the pass).
 Empty `submit([])` is for asset load, not the present loop.
 

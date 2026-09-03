@@ -119,6 +119,55 @@ swapchain on capture.
 `UploadStats.static_uploads` is also the static-topology counter: default
 headless 8-frame run must print `static_uploads=1`.
 
+### `map_async` cost (Software fact)
+
+`map_async` is cheap to **call** and expensive to **wait for**. The callback
+cannot fire until every submitted use of that buffer is done **and** something
+polls (`queue.submit`, `device.poll`, `instance.poll_all`). Native wgpu is
+callback-based; a `Future` wrapper only hides a `poll`. Headless `Poll` in a
+tight loop historically did **not** retire maps; `Wait` did. Windowed present
++ `submit` usually drains callbacks.
+
+```
+unmap slot
+encoder.copy  staging → VB
+submit
+map_async(Write, 0..cap)   // AtomicBool in cb
+write_particles: poll(Poll); test ready[]
+```
+
+That Poll is optional bookkeeping. It does **not** guarantee the previous
+frame’s map finished. Fallback = all three still waiting.
+
+| Piece | Cost |
+|-------|------|
+| `map_async` call | CPU µs |
+| Wait for last copy of that slot | **1–3 frames of GPU work** (the real latency) |
+| `vkMapMemory` / invalidate at 128 KiB | small; scales with **mapped range** |
+| memcpy 128 KiB | bandwidth; CPU `Vec` already exists |
+| `unmap` | flush if non-coherent; NVIDIA staging usually coherent |
+| `device.poll(Wait)` | **stalls the GPU timeline to idle** — capture only |
+| Mapping 2 MiB / 128 MB “just in case” | fat-map tax (Chrome 4090: 1.3–2× vs used range) |
+
+Native Vulkan fat-map tax is smaller than in-browser, but `slice(..)` still
+marks the whole cap live. Payload-sized slots keep that honest.
+
+The 1/300 first+last-capture fallback is **map-async latency**, not memcpy.
+`poll(Wait)` after every `map_async` would zero fallbacks and destroy overlap
+(serial-await). Hash skip still beats any map.
+
+Poll policy:
+
+- Frame loop: `submit` only. Windowed event loop already pumps wgpu.
+- `write_particles`: `poll(Poll)` optional, for fresher `ready[]` same call.
+- Capture read: `map_async(Read)` + `Wait` **only** on grabbed frames.
+- Grow: `Wait` before destroying mapped slots.
+
+Do not add async/await wrappers, extra poll threads, or
+`on_submitted_work_done` per particle write. `particle_fallbacks` under dirty
+windowed vs first+last headless **is** the map-async overhead meter. 0–1 per
+300 frames at 128 KiB is the operating point. Do not map the VERTEX buffer.
+
 ## StagingBelt (Software fact — do not add for particles)
 
 `wgpu::util::StagingBelt` is wgpu’s arena over the same MAP_WRITE + COPY_SRC
@@ -143,6 +192,25 @@ one-off chunk (`size.max(chunk_size)`).
 Dirty 4090 runs: `ring_copies≈frames`, `particle_fallbacks` 0–1,
 `write_buffer≈1/frame` (uniforms). A particle belt would `map_async` the
 **whole** chunk — the fat-map trap if `chunk_size` ≫ 128 KiB.
+
+| | 3-slot particle ring | StagingBelt |
+|--|----------------------|-------------|
+| Allocation | fixed 3 × payload | bump inside `chunk_size`, else new buffer |
+| Close | unmap one slot | unmap **every** active chunk, even 1% full |
+| Reclaim | `map_async` that slot | `map_async(slice(..))` **whole chunk** |
+| Fallback | `write_buffer` if 0 ready | create another chunk (silent growth) |
+| Best write | one 128 KiB field | dozens of 16–256 B scraps |
+
+“Fast” belt: one `finish()` per submit, 2–3 chunks in flight, non-blocking
+`recall`, DEST DEVICE_LOCAL, **many** writes sharing one mapped chunk. One
+belt write per submit is `write_buffer` with extra ceremony. `chunk_size` =
+256 KiB “so everything fits” is the unused-range tax. Do not `submit([])`
+every N belt writes unless streaming assets. Do not map, write 256 B,
+`finish`, repeat 300 times.
+
+If a belt is added: `finish` → `submit` → `recall` (or
+`finish_and_recall_on_submit` then submit **that** encoder before the next
+allocate). Count `belt_chunks_created`; it must plateau by frame ~3.
 
 If inner_cone later storms HUD/hubs (`write_buffer_calls` tens per present):
 add a **16–64 KiB** belt on that path only, dest still DEVICE_LOCAL

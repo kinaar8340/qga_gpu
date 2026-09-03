@@ -35,6 +35,7 @@ Dirty particles: ring_copies + particle_fallbacks >= frames; fallbacks allowed.
 - Profile Queue::write_buffer before adding meshlets.
 - StagingBelt only if tens of small copies per present; never on the 128 KiB particle blit.
 - One encoder, one submit per present. Do not empty-submit or split upload/draw submits at this size.
+- map_async is cheap to call; Wait is GPU-timeline. particle_fallbacks is the meter. Never Wait on the ring.
 
 ## Features
 default = ["winit"]

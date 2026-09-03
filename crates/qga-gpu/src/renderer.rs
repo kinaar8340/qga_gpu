@@ -904,7 +904,7 @@ impl Renderer {
             self.particles.grow(&gpu.device, need);
             self.stats.particle_grows += 1;
         }
-        // Ready flags are set from map_async callbacks. Poll does not wait.
+        // Callbacks run on submit/poll. Poll does not Wait; fallback is backpressure.
         gpu.device.poll(wgpu::Maintain::Poll);
         if let Some(i) = self.particles.pick_ready() {
             {
@@ -1197,8 +1197,9 @@ impl Renderer {
         }
 
         gpu.queue.submit(Some(encoder.finish()));
-        // Reclaim the full slot cap so the next write can be any size ≤ cap.
-        // Cap is next-pow2 of payload, not a fat arena.
+        // Reclaim after submit. Callback waits on GPU use of this slot (1–3 frames),
+        // not on this call. Do not poll(Wait) here — that is the capture anti-pattern.
+        // Cap is payload-sized; mapping 0..cap at 128 KiB is not a fat arena.
         let cap = self.particles.cap_bytes;
         for slot in remap_slots {
             let ready = self.particles.ready[slot].clone();
