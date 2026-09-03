@@ -1,0 +1,18 @@
+[package]
+name = "qga-gpu-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Tiny qga-gpu window: sphere, two cones, separator torus, 4k particles"
+default-run = "qga-gpu-demo"
+
+[dependencies]
+qga-gpu = { workspace = true, features = ["winit", "headless", "capture", "glow"] }
+glam.workspace = true
+winit.workspace = true
+anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+pollster.workspace = true

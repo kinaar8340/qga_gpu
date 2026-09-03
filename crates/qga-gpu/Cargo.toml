@@ -1,0 +1,29 @@
+[package]
+name = "qga-gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+description = "wgpu/Vulkan renderer for QGA. This crate owns the frame."
+
+[features]
+default = ["winit"]
+winit = ["dep:winit", "dep:pollster"]
+headless = ["dep:pollster"]
+capture = []
+glow = []
+# From<&qga_math::Fiber> for GpuFiber. Off by default so the demo has no
+# path to qga_engine. Enable only in a workspace that also provides qga-math.
+qga-math = ["dep:qga-math"]
+
+[dependencies]
+glam.workspace = true
+bytemuck.workspace = true
+wgpu.workspace = true
+anyhow.workspace = true
+log.workspace = true
+pollster = { workspace = true, optional = true }
+winit = { workspace = true, optional = true }
+qga-math = { path = "../../../qga_engine/crates/qga-math", optional = true }

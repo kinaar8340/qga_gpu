@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["crates/qga-gpu", "crates/qga-gpu-demo"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["kinaar8340"]
+repository = "https://github.com/kinaar8340/qga_gpu"
+readme = "README.md"
+
+[workspace.dependencies]
+qga-gpu = { path = "crates/qga-gpu" }
+glam = "0.29"
+bytemuck = { version = "1.22", features = ["derive"] }
+wgpu = "24.0"
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen", "x11"] }
+pollster = "0.4"
+anyhow = "1.0"
+log = "0.4"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
