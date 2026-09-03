@@ -53,7 +53,11 @@ winit, headless, capture, glow, qga-math (optional From; not default)
 ## Consumers (v0)
 inner_cone @ 03e1fb2: path ../qga_gpu/crates/qga-gpu, features = ["capture"].
 Fiber conversion in geometry::gpu_fiber. Do not enable qga-math on this crate.
-qga_engine: git dep, no rev (floats on main). Features winit/headless/capture/glow.
+qga_engine @ db5194e (https://github.com/kinaar8340/qga_engine): git dep, no
+rev (Cargo.lock pins a sha). Features winit/headless/capture/glow. Fiber
+conversion in qga-app::convert. Cosmos default 262144 (cap 524288); realm
+128x128 fibers, 256^2 terrain. Scenes/CLI/controls live in that README and
+docs/SCENES.md. Do not copy them here.
 inner_cone has no headless binary; make headless / make ring here are the
 static_uploads == 1 and dirty-ring proof (this 4090: 8 still su=1; 300 dirty
 rc=301 pf=0 pg=0). Does not prove inner_cone mosaic/hull or qga-app scenes.

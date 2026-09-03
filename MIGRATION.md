@@ -2,14 +2,15 @@
 
 This repo is the extracted renderer. Do **not** edit `qga_engine` or
 `inner_cone` from this extract. Local `inner_cone` `03e1fb2` is the contract
-if GitHub still shows `73de02d`.
+if GitHub still shows `73de02d`. [`qga_engine`](https://github.com/kinaar8340/qga_engine)
+is a git repo on `main` at `db5194e`.
 
 ## Status (Software fact)
 
 | Consumer | Form | Features | Fiber conversion |
 |----------|------|----------|------------------|
 | `inner_cone` @ `03e1fb2` | `path = "../qga_gpu/crates/qga-gpu"` | `["capture"]` | `geometry::gpu_fiber` |
-| `qga_engine` (`qga-app`) | git, **no `rev`** | `winit`, `headless`, `capture`, `glow` | `qga-app::convert` |
+| `qga_engine` (`qga-app`) @ `db5194e` | git, **no `rev`** | `winit`, `headless`, `capture`, `glow` | `qga-app::convert` |
 
 `qga-math` / `qga-sim` stay in the engine workspace. Do **not** enable
 `qga-gpu/qga-math` on either consumer: the renderer must not take a default
@@ -51,12 +52,13 @@ Fallbacks are allowed and counted. `particle_skipped == 0` when dirty.
 This 4090 (`f263ea7`): 8 still `static_uploads=1`; 300 dirty
 `ring_copies=301`, `particle_fallbacks=0`, `particle_grows=0`. That proves
 the demo sculpture is not retessellated. It does **not** prove `inner_cone`
-mosaic / hull / live harmonics or `qga-app` realm / cosmos(4096) — those
-binaries still do not print `UploadStats`.
+mosaic / hull / live harmonics or `qga-app` lab / realm / cosmos / oam /
+reveal — those binaries still do not print `UploadStats`.
 
 ## qga_engine
 
-In-tree `crates/qga-gpu` is gone. Workspace dep:
+Published: [`kinaar8340/qga_engine`](https://github.com/kinaar8340/qga_engine),
+`main` @ `db5194e`. In-tree `crates/qga-gpu` is gone. Workspace dep:
 
 ```toml
 # qga_engine/Cargo.toml workspace.dependencies
@@ -71,8 +73,13 @@ Leave this float as a written risk until `qga-app` pins
 cannot silently land in the published consumer while `inner_cone` stays on
 the sibling path.
 
-`qga-app --headless` does not print or assert `UploadStats`. Realm / cosmos /
-oam / reveal **scenes stay in qga-app / qga-sim**, not in this crate.
+Engine docs at `db5194e` (README, DESIGN, AGENTS, Makefile, `docs/SCENES.md`)
+match this split: this crate owns the frame; `qga-app` owns lab / realm /
+cosmos / oam / reveal. Software fact of that tree: cosmos default 262 144
+bodies (cap 524 288), realm 128 × 128 fibers and 256² terrain. Palettes
+rewrite `GpuParticle` hue in `qga-app::convert`. Space on cosmos hides HUD
+tabs; it does not pause. `--preset`, `--dump-species`, and `$QGA_PLAYGROUND`
+are engine CLI. `qga-app --headless` does not print or assert `UploadStats`.
 
 Do not open a PR into `qga_engine` from this extract.
 

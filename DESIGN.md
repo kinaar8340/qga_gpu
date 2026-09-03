@@ -1,11 +1,13 @@
 # qga-gpu — design
 
 A standalone wgpu/Vulkan renderer. **This crate owns the frame.** Geometry
-meaning lives in qga / qga-math. Renderer claims are **Software fact**.
+meaning lives in [`qga_engine`](https://github.com/kinaar8340/qga_engine)
+(`qga-math` / `qga-sim` / `qga-app`). Renderer claims are **Software fact**.
 
 This is not the QGA engine, not a fantasy realm, and not a solar-nebula sim.
-Those scenes stay in `qga_engine` / `inner_cone`. This crate is the upload path
-and the swapchain.
+Those scenes stay in [`qga_engine`](https://github.com/kinaar8340/qga_engine)
+(`main` @ `db5194e`) and `inner_cone`. This crate is the upload path and the
+swapchain.
 
 ## Crate map
 
@@ -31,7 +33,7 @@ WGSL lives in-tree under `crates/qga-gpu/src/shaders/`. No runtime Python.
 | Quaternions, Hopf, Hurwitz, topographs | `qga` / `qga-math` | not imported (optional `qga-math` feature) |
 | Tube look, bloom, void | `flux_hopf_explorer` via engine WGSL | `src/shaders` |
 | Static lattice once, live harmonics per frame | `inner_cone` engine tick | `Renderer` upload API |
-| Realm / cosmos / OAM / reveal | `qga-app` | **not copied** |
+| Realm / cosmos / OAM / reveal | [`qga_engine`](https://github.com/kinaar8340/qga_engine) `qga-app` (`docs/SCENES.md`) | **not copied** |
 
 Python is an authoring language in the ecosystem. The frame loop is Rust +
 Vulkan. Do not `sys.path` into sibling repos.
@@ -127,7 +129,7 @@ swapchain on capture.
 `UploadStats.static_uploads` is also the static-topology counter: default
 headless 8-frame run must print `static_uploads=1`. These demo numbers do
 **not** prove `inner_cone` mosaic / hull / live harmonics or `qga-app`
-realm / cosmos(4096). Those binaries still do not print `UploadStats`.
+lab / realm / cosmos / oam / reveal. Those binaries still do not print `UploadStats`.
 
 ### `map_async` cost (Software fact)
 
@@ -1139,7 +1141,8 @@ the strategy you want.
    convert. Optional `--features qga-math` for `From<&qga_math::Fiber>`.
 2. **No scene-kind draw gate.** `render` draws whatever was uploaded.
    inner_cone today passes `Reveal` so hubs/HUD draw; that leak is not reproduced.
-3. **Frame uniforms are 256 bytes**, not the engine's 272 (cosmos `palette` pad).
+3. **Frame uniforms are 256 bytes.** Cosmos palettes rewrite `GpuParticle` hue
+   in `qga-app::convert`; they are not a 272-byte UBO pad.
 4. **Shader tube extrusion** instead of CPU `RibbonVert` (48 B).
 5. **Particle staging ring** instead of realloc + `write_buffer` on every path.
    Not `StagingBelt`: one 128 KiB blit/frame is the wrong shape for a belt.
@@ -1166,8 +1169,9 @@ the strategy you want.
 - Vendoring all of `qga-math`.
 
 Consumer wiring: [MIGRATION.md](MIGRATION.md). `inner_cone` @ `03e1fb2`
-path-depends with `features = ["capture"]` only. `qga_engine` git-depends
-with no `rev`. Do not enable `qga-math` on this crate for those callers.
+path-depends with `features = ["capture"]` only. [`qga_engine`](https://github.com/kinaar8340/qga_engine)
+@ `db5194e` git-depends with no `rev` (`Cargo.lock` pins a sha). Do not
+enable `qga-math` on this crate for those callers.
 
 ## Claim labels
 

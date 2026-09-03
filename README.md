@@ -1,7 +1,8 @@
 # qga-gpu
 
 wgpu/Vulkan renderer. **This crate owns the frame.** Geometry meaning lives in
-[`qga`](https://github.com/kinaar8340/qga) / `qga-math`.
+[`qga_engine`](https://github.com/kinaar8340/qga_engine) (`qga-math` / `qga-sim`
+/ `qga-app`) and the manuscript [`qga`](https://github.com/kinaar8340/qga).
 
 Renderer claims are **Software fact**.
 
@@ -14,7 +15,8 @@ crates/qga-gpu-demo    1 sphere + 2 cones + separator torus + 4k particles
 
 Extracted from `qga_engine/crates/qga-gpu` and the inner_cone upload path.
 `inner_cone` @ `03e1fb2` path-depends on this crate (`features = ["capture"]`).
-`qga_engine` depends via git with no `rev`. This extract does **not** open a
+[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` git-depends
+with no `rev` (`Cargo.lock` pins a sha). This extract does **not** open a
 PR into those repos. See [MIGRATION.md](MIGRATION.md).
 
 ## Hardware target (this machine)
@@ -62,12 +64,12 @@ on `--export`. `qga-app --headless` does not print `UploadStats` either.
 ## Consumers
 
 Software fact. Local `inner_cone` `03e1fb2` is the contract if GitHub still
-shows `73de02d`.
+shows `73de02d`. Engine snapshot: `main` @ `db5194e`.
 
 | Consumer | Dep | Not in this extract |
 |----------|-----|---------------------|
 | `inner_cone` | `qga-gpu = { path = "../qga_gpu/crates/qga-gpu", features = ["capture"] }` | do not edit inner_cone here |
-| `qga_engine` | git, **no `rev`**; `features = ["winit", "headless", "capture", "glow"]` | do not PR into qga_engine here |
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` | git, **no `rev`** (lock pins sha); `features = ["winit", "headless", "capture", "glow"]` | do not PR into qga_engine here |
 
 `capture` is the right local set for `inner_cone --export`. A `qga_gpu` `main`
 push can change record layout or feature defaults while `inner_cone`’s path
@@ -75,6 +77,12 @@ dep stays frozen to the sibling tree. Leave the engine git float until
 `qga-app` pins `rev = "f263ea7"` (or the lock sha). After that, a
 record-layout change here cannot silently land in the published consumer
 while `inner_cone` stays on the sibling path.
+
+Engine scenes (lab / realm / cosmos / oam / reveal), CLI, and controls live
+in that repo’s README and `docs/SCENES.md`. Software fact of `db5194e`:
+cosmos default 262 144 bodies (cap 524 288), realm 128 × 128 fibers and
+256² terrain. Space on cosmos hides HUD tabs; it does not pause. This crate
+does not implement those scenes.
 
 ## Dirty-flag / instance / persistent-particle policy
 
@@ -121,7 +129,7 @@ reclaimed before the CPU lapped `map_async`. Do **not** add a 4th slot on
 this result (only if windowed fallbacks exceed ~1%). Windowed FIFO 300 → 0
 fallbacks (present paces reclaim). That is DMA into DEVICE_LOCAL, not a
 broken ring. These numbers do **not** prove `inner_cone` mosaic / hull /
-live harmonics or `qga-app` realm / cosmos(4096). Do not persist-map the particle VB through wgpu. Do not
+live harmonics or `qga-app` lab / realm / cosmos / oam / reveal. Do not persist-map the particle VB through wgpu. Do not
 `poll(Wait)` on write maps (`map_async` latency is 1–3 GPU frames;
 Wait serializes them). Do not put particles on `StagingBelt`.
 A 16 KiB belt is only for a future HUD/hub storm of tens of small
@@ -184,6 +192,14 @@ Software fact:
   the HAL steady state.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
+## Related repos
+
+| Repo | Role |
+|------|------|
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) | Scenes, math, sim. Git-depends on this crate. `main` @ `db5194e` |
+| [`qga`](https://github.com/kinaar8340/qga) | Manuscript + Python lib (source of math) |
+| `inner_cone` | Sculpture viewer; path-depends here (`03e1fb2`) |
+
 ## What this crate is not
 
 - Realm terrain, cosmos n-body, OAM PDE, or reveal Lorenz scenes.
@@ -191,3 +207,7 @@ Software fact:
 - A theorem about the Z-map or 350/π.
 
 See [DESIGN.md](DESIGN.md) and [MIGRATION.md](MIGRATION.md).
+
+## License
+
+MIT — same ecosystem as qga / qga_engine / inner_cone.
