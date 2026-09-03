@@ -156,6 +156,9 @@ Software fact:
   stay in-process. Neither on default `make ring`. On this box wgpu is
   `ash` / `wgpu-hal::vulkan`: one graphics queue (family 0), HOST_VISIBLE
   ring, DEVICE_LOCAL VB. Do not call HAL; do not skip `map_async`.
+  gpu-alloc is HAL `VkDeviceMemory` suballoc (wgpu 24: zakarumych/gpu-alloc),
+  not the ring. Do not depend on it. `particle_grows=0` on `make ring` is
+  the HAL steady state.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
 ## What this crate is not

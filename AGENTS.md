@@ -18,6 +18,7 @@ This crate owns the frame.
 - Debug validation by the Caused by tree + fn_ident, not a numeric code. Cluster: map 8, copy 4, pitch 256, submit-while-mapped. Default panic; do not recover.
 - wgpu trace is a WebGPU API log; RenderDoc is a Vulkan frame capture. Opposite sides of wgpu-hal. wgpu 24 cannot record (gfx-rs/wgpu#5974). Counters are neither tool. RenderDoc on windowed 4090.
 - wgpu-hal/vulkan is ash on the 4090. Do not call HAL. One graphics queue (family 0). Persistent HAL maps ≠ skip map_async. Barriers come from one encoder.
+- gpu-alloc is the HAL VkDeviceMemory suballocator, not the 3-slot ring. wgpu 24 Vulkan is zakarumych/gpu-alloc. Do not depend on it. particle_grows is the grow meter.
 - Vulkan via wgpu only. No OpenGL. CUDA is out of scope for v0.
 
 ## Target machine

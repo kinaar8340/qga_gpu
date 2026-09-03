@@ -987,6 +987,125 @@ DEVICE_LOCAL VB, HOST_VISIBLE ring, implicit barriers from one encoder.
 The knobs you own stay in core-facing API (slot count, pitch helper, no
 `Wait` on write maps).
 
+### gpu-alloc is not the particle ring (Software fact)
+
+“gpu-alloc” in this stack is the Vulkan `VkDeviceMemory` suballocator
+inside **wgpu-hal**, not the 3-slot ring. You never pick buddy vs linear.
+You pick WebGPU usages; HAL maps that to a memory type and a suballoc
+strategy.
+
+Two crates show up in the lineage:
+
+- **zakarumych/gpu-alloc** — wgpu-hal **24 Vulkan** (`device.rs`
+  `GpuAllocator`, `UsageFlags::HOST_ACCESS` / `FAST_DEVICE_ACCESS`). This
+  crate.
+- **Traverse-Research/gpu-allocator** — wgpu-hal **DX12** today
+  (`MemoryLocation::GpuOnly` / `CpuToGpu` / `GpuToCpu`). Planned for Vulkan
+  ([gfx-rs/wgpu#5925](https://github.com/gfx-rs/wgpu/issues/5925)); later
+  wgpu Vulkan `device.rs` already uses it.
+
+Same idea: few `vkAllocateMemory` objects, many `VkBuffer`s bound at
+offsets. `maxMemoryAllocationCount` on NVIDIA is thousands, not unlimited
+(`DeviceProperties.max_memory_allocation_count` in the HAL config).
+
+**This crate is `MemoryHints::Performance`.** wgpu-hal 24 `adapter.rs`
+`perf_cfg` (not the old gfx-hal `alloc.rs` numbers):
+
+| Knob | wgpu-hal 24 Performance | Old gfx-hal default | Meaning |
+|------|-------------------------|---------------------|---------|
+| `dedicated_threshold` | 32 MiB | 32 MiB | ≥ this → own `VkDeviceMemory` |
+| `preferred_dedicated_threshold` | **1 MiB** | 8 MiB | prefer dedicated if the type allows |
+| `transient_dedicated_threshold` | 128 MiB | 128 MiB | staging/transient dedicated only if huge |
+| `starting_free_list_chunk` | 128 MiB | `linear_chunk` 128 MiB | bump/linear slab size |
+| `final_free_list_chunk` | 512 MiB | — | grow the linear slab up to this |
+| `minimal_buddy_size` | **1 B** | 1 KiB | smallest buddy leaf |
+| `initial_buddy_dedicated_size` | 8 MiB | 8 MiB | first buddy block of device-local heap |
+
+`MemoryHints::MemoryUsage` shrinks those (dedicated 8 MiB, linear start
+8 MiB). Do not switch this crate to MemoryUsage to “save” 128 KiB slots.
+
+**Dedicated.** One resource ↔ one `VkDeviceMemory`. Best for large images
+(1920×1080 color, bloom mips) and anything the spec wants
+`DEDICATED_MEMORY_REQUIRED` for. Worst for 32 B records.
+
+**Buddy.** Power-of-two split/merge in a big block. Good for many medium
+DEVICE_LOCAL buffers (VB, UBO, capture buffer). Internal fragmentation:
+a 128 KiB slot may consume 128 KiB exactly; 129 KiB consumes 256 KiB.
+
+**Linear / bump.** Fast allocate, no general free. Fits
+`Queue::write_buffer` scratch and belt chunks that die at submit. A 128
+MiB linear chunk is why a belt that `finish`es every frame should
+**recall**, not leak chunks: the HAL slab is huge, but mapped windows and
+`vkMapMemory` count still matter.
+
+gpu-allocator’s public labels (DX12 now; Vulkan after #5925):
+
+| `MemoryLocation` | Vulkan property intent | This crate |
+|------------------|------------------------|------------|
+| `GpuOnly` | `DEVICE_LOCAL`, not host-visible | dest VB, color/bloom images |
+| `CpuToGpu` | `HOST_VISIBLE` (+ ideally `HOST_COHERENT`) | ring slots, `write_buffer` staging |
+| `GpuToCpu` | host-visible cached | capture MAP_READ |
+
+wgpu-hal 24 Vulkan does the same split with `gpu_alloc::UsageFlags`:
+`MAP_WRITE`/`MAP_READ` → `HOST_ACCESS` + `UPLOAD`/`DOWNLOAD`; else
+`FAST_DEVICE_ACCESS`. `linear: true` is a gpu-allocator buffer flag
+(always for buffers). Images are non-linear and often dedicated.
+
+**How `create_buffer` chooses (wgpu-hal 24 Vulkan).**
+
+1. `vkCreateBuffer` with usage bits from `conv::map_buffer_usage`.
+2. `vkGetBufferMemoryRequirements` → size, alignment, `memoryTypeBits`.
+3. Filter types HAL allows (`valid_ash_memory_types`).
+4. Pick `UsageFlags` from MAP_READ / MAP_WRITE / none.
+5. `GpuAllocator::alloc`; `vkBindBufferMemory(memory, offset)`.
+6. Map path: gpu-alloc tracks one map per `MemoryBlock`. Persistent map
+   at HAL; core still `map_async` at WebGPU.
+
+OOM is `gpu_alloc::AllocationError` → `DeviceError::OutOfMemory` /
+`Lost` (`TooManyObjects` included). wgpu 24 Vulkan does **not** pre-check
+a % of `VkMemoryHeap` budget; that `error_if_would_oom_on_resource_allocation`
+path is later wgpu. NVIDIA still OOMs for real.
+
+ReBAR / “mappable device-local”: if a type is both `DEVICE_LOCAL` and
+`HOST_VISIBLE`, HAL *may* put `HOST_ACCESS` there. You still must not set
+`VERTEX|MAP_WRITE` without `MAPPABLE_PRIMARY_BUFFERS`. Two allocations:
+128 KiB host-visible + DEVICE_LOCAL VB is the portable 4090 path.
+
+**vs this crate’s ring.**
+
+| Allocator | Grain | Lifetime |
+|-----------|-------|----------|
+| gpu-alloc (Vulkan 24) / gpu-allocator (later) | `VkDeviceMemory` slabs (KiB–MiB) | process / device |
+| Particle ring | 3 × 128 KiB WebGPU buffers | app-owned, reused |
+| StagingBelt | bump inside those buffers | per submit |
+| `Queue::write_buffer` | HAL transient linear + copy | until submit flush |
+
+Growing a slot (`×2`) is a **new** `create_buffer` + new suballoc + bind.
+`particle_grows` is the only counter you need. Do not grow every frame:
+that is a new buddy split every time and leaves the old block to the
+allocator’s free list (or dedicated destroy).
+
+Capture buffer `padded_bpr × height` (~8 MiB at 1920) sits near
+`preferred_dedicated_threshold` (1 MiB on this Performance config, so it
+may be dedicated). One dedicated or one buddy slab is fine. Do not
+suballocate capture rows yourself inside gpu-alloc — that is the 256 B
+pitch buffer you already own.
+
+**What not to tune from qga-gpu.**
+
+- Do not depend on `gpu-alloc` / `gpu-allocator` in this crate.
+- Do not request dedicated memory via HAL.
+- Do not pack the UBO, three ring slots, and VB into one `VkDeviceMemory`
+  by hand.
+- Do not assume buddy leaves match WebGPU `MAP_ALIGNMENT` 8; core pads
+  requirements first. wgpu-hal 24 `minimal_buddy_size` is 1 B, not 1 KiB.
+
+If `create_buffer` starts returning OOM on grow, you leaked slots (old cap
+not dropped) or filled the HOST_VISIBLE heap with 300 one-off belt chunks.
+`particle_grows=0` on `make ring` means the HAL allocator is in steady
+state: three mapped blocks + one VB + one color + one readback. That is
+the strategy you want.
+
 ## Upload contract (from inner_cone)
 
 1. Tessellate static topology once (parametric sphere / cone / torus).
