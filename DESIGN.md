@@ -507,6 +507,65 @@ runtime scope; it keeps the happy path from constructing illegal numbers.
 Grep strings (`UnalignedBytesPerRow`, `UnalignedOffset`) are `Display` text;
 the **enum** is the API. There are no hex codes.
 
+### Error scopes (Software fact — not used on the hot path)
+
+Scopes are a LIFO **filter stack on the device**, per **OS thread**. They
+capture the first matching `Error`. Anything that misses the stack hits
+`on_uncaptured_error` (native default: panic). They do not replace
+`layout.rs` or `particle_fallbacks`.
+
+This crate is **wgpu 24**:
+
+```rust
+device.push_error_scope(ErrorFilter::Validation);
+// create / encode / submit
+let fut = device.pop_error_scope(); // pop is immediate; future is the result
+gpu.device.poll(wgpu::Maintain::Wait);
+let err: Option<Error> = pollster::block_on(fut);
+```
+
+Newer wgpu uses a `!Send` guard (`let scope = push...; scope.pop()`). Drop
+without pop still pops and **discards** the error. Document the 24 API until
+the dep moves.
+
+`ErrorFilter`: `Validation` | `OutOfMemory` | `Internal`. A validation scope
+does **not** swallow OOM. Nested: inner matching filter eats the error;
+parent sees `None`. `Error`: `Validation { description, source }`,
+`OutOfMemory { source }`, `Internal { description, source }`.
+
+Pop only schedules the query. The future completes after the **device
+timeline** has processed the enclosed commands — same pump as `map_async`.
+`block_on(pop)` without `Wait` can hang or miss, same class as
+`Maintain::Poll` vs capture maps. Native validation is often synchronous on
+encode/submit; Web is async. Write as if async.
+
+`on_uncaptured_error` may run **inline** on the producing thread. Do not take
+locks the caller holds. Empty stack + default handler = panic
+`wgpu error: Validation Error / Caused by:`.
+
+Stack is OS-thread-local, not green-thread-local. `map_async` callbacks can
+run on the poll thread. Do not push on the render thread and pop on a worker.
+
+| Path | Scope? |
+|------|--------|
+| Particle ring map/copy | **No** — illegal numbers are tests; fallback is not a GPU error |
+| Capture `copy_texture_to_buffer` | Optional debug-only around first encode |
+| `create_buffer` grow | `OutOfMemory` only if a soft fail is wanted |
+| Hot frame (`make ring`) | **No** — alloc + poll + future per frame is the wrong tax |
+| `cargo test` of a known-bad pitch | Yes: push Validation, encode 3200 bpr, pop, assert `UnalignedBytesPerRow` |
+
+Do not wrap `write_particles` in a scope and treat `UnalignedRange` as “use
+`write_buffer`”. That hides a contract break. `map_async` callback
+`Err(BufferAsyncError)` is **not** a scope event. Submit-while-mapped is
+validation on `Queue::submit`. Capture `Wait` after read `map_async` is for
+the map, not for popping a scope.
+
+Policy: default uncaptured = **panic** (keep). No per-frame scopes. Tests stay
+numeric (`need % 8`, `padded_bpr`). A scope is a diagnostic around one
+experimental encode, popped with `Wait` on the same thread, never the
+particle fallback path. Keep OOM on a **separate** outer scope if a grow can
+legally fail.
+
 `tests/layout.rs` pins both worlds: `size_of` % 4 and % 8; partial map
 `particle_ring_need_bytes(n) = n × 32` for odd `n`; empty `n = 0` is 0 and
 must not be mapped; grow ×2 from 128 KiB stays % 8; capture pitch

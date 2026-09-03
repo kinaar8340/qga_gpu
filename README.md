@@ -144,7 +144,8 @@ Software fact:
   That pitch is WebGPU-on-Vulkan, not the 4090’s optimal tiling.
 - wgpu validation is an enum tree (`BufferAccessError`, `TransferError`), not
   `VkResult`. `layout.rs` keeps illegal numbers off the upload path.
-  `particle_fallbacks` is not a validation error.
+  `particle_fallbacks` is not a validation error. No per-frame error scopes;
+  uncaptured validation panics.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
 ## What this crate is not
