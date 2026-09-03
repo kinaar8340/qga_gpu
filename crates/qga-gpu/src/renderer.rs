@@ -890,14 +890,14 @@ impl Renderer {
         if particles.is_empty() {
             self.particles.n = 0;
             self.particle_hash = 0;
-            // Do not map 0..0 — wgpu size 0 is not a valid map/copy range.
+            // Do not map 0..0 — BufferAccessError, not a legal range.
             return Ok(());
         }
         let bytes = bytemuck::cast_slice(particles);
         debug_assert_eq!(
             bytes.len() as u64 % wgpu::MAP_ALIGNMENT,
             0,
-            "particle map 0..need must be MAP_ALIGNMENT"
+            "BufferAccessError::Unaligned* if need % MAP_ALIGNMENT"
         );
         let hash = fnv1a64(bytes);
         if hash == self.particle_hash && particles.len() as u32 == self.particles.n {

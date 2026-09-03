@@ -458,6 +458,55 @@ wgpu transitions when the encoder records the copy after the pass.
 Keep particles as DEVICE_LOCAL buffers. Keep color as optimal textures.
 Treat 256 B pitch as a **WebGPU-on-Vulkan tax**, not the GPU’s true tiling.
 
+## wgpu validation (Software fact — no VkResult table)
+
+wgpu does not ship numeric error codes. Validation is a typed enum tree,
+classified as WebGPU `ErrorType::Validation` (vs `OutOfMemory` / `Internal` /
+`DeviceLost`). The panic text `wgpu error: Validation Error / Caused by:` is
+`Display` on that enum. Native default: uncaptured validation **panics**.
+`push_error_scope(ErrorFilter::Validation)` can catch; do not use it to retry
+dense pitch.
+
+`particle_fallbacks` is a **ready-slot miss**, not a validation miss.
+
+**Buffer map** (`BufferAccessError`) — the ring: `UnalignedOffset` (`offset %
+8`), `UnalignedRangeSize` / `UnalignedRange`, `AlreadyMapped`,
+`MapAlreadyPending`, `NotMapped`, `MissingBufferUsage`, `OutOfBounds*`,
+`NegativeRange`, `MapAborted`, `Failed`. `0..12` → unaligned. Empty `0..0`
+must not map. Mapping a slot still used as copy source in an unsubmitted
+encoder often fails on **submit**, not this enum.
+
+**Buffer create** (`CreateBufferError`): `UnalignedSize` (`mapped_at_creation`
+size % 4), `InvalidUsage`, `UsageMismatch` (`MAP_WRITE` + `VERTEX` without
+`MAPPABLE_PRIMARY_BUFFERS`), `MaxBufferSize`, `AccessError`. Ring staging is
+`MAP_WRITE | COPY_SRC` + `mapped_at_creation` + cap % 8. Dest VB is
+`VERTEX | COPY_DST`, not mapped — that combo avoids `UsageMismatch`.
+
+**Copies** (`TransferError`): `UnalignedBytesPerRow` (encoder texture copies,
+256), `UnspecifiedBytesPerRow` / `UnspecifiedRowsPerImage`,
+`InvalidBytesPerRow` (bpr < dense), `UnalignedBufferOffset`,
+`UnalignedCopySize` (buffer–buffer % 4), `UnalignedCopyWidth`/`Height`/`Origin*`,
+`MissingBufferUsage` / `MissingTextureUsage`, buffer overrun (`padded_bpr ×
+rows` larger than allocation), `InvalidSampleCount` (MSAA), `InvalidMipLevel`,
+`SameSourceDestinationBuffer`, `CopyAspectNotOne`. 800-wide BGRA at bpr 3200
+→ `UnalignedBytesPerRow`. 3328 pitch with a 3200×height buffer → overrun.
+`copy_bytes_per_row_bgra` + alloc `padded_bpr * height` keeps both silent.
+
+Frame uniforms at 256 B dodge downlevel `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED`.
+
+```text
+write_particles map 0..need     → BufferAccessError::Unaligned* if need % 8 ≠ 0
+copy staging → VB               → TransferError::UnalignedCopySize if need % 4 ≠ 0
+copy_texture_to_buffer capture  → UnalignedBytesPerRow / bounds overrun
+create MAP_WRITE|VERTEX         → CreateBufferError::UsageMismatch
+submit while slot still mapped  → Validation on Queue::submit
+```
+
+`layout.rs` is the static version of these variants. It does not replace a
+runtime scope; it keeps the happy path from constructing illegal numbers.
+Grep strings (`UnalignedBytesPerRow`, `UnalignedOffset`) are `Display` text;
+the **enum** is the API. There are no hex codes.
+
 `tests/layout.rs` pins both worlds: `size_of` % 4 and % 8; partial map
 `particle_ring_need_bytes(n) = n × 32` for odd `n`; empty `n = 0` is 0 and
 must not be mapped; grow ×2 from 128 KiB stays % 8; capture pitch
