@@ -880,6 +880,113 @@ Do not zip a 300-frame dirty trace (128 KiB × 300 blobs). Cut to 8. Zip
 the folder, not a `.rdc`. Do not expect the player to explain a mailbox
 tear. Do not expect RenderDoc to print `COPY_BYTES_PER_ROW_ALIGNMENT`.
 
+### wgpu-hal Vulkan on this box (Software fact)
+
+On this box wgpu is `ash` talking to the 4090. `wgpu-hal::vulkan` is the
+unsafe portable layer: no validation, no usage tracking, persistent maps,
+explicit barriers. `wgpu-core` is what turns your one encoder + one submit
+into those HAL calls.
+
+`wgpu-hal/src/vulkan/` (wgpu-hal 24.0.4):
+
+| File | Role |
+|------|------|
+| `instance.rs` | `VkInstance`, layers, surface extensions; swapchain types live here + `mod.rs` (no separate `swapchain/` dir) |
+| `adapter.rs` | `VkPhysicalDevice`, features, **`family_index = 0` assumed graphics** (`//TODO`) |
+| `device.rs` | `VkDevice`, `gpu-alloc`, create buffer/image, `map_buffer` |
+| `command.rs` | `VkCommandPool` + active `VkCommandBuffer`, copies, barriers, draws |
+| `conv.rs` | WebGPU usages ↔ `VkAccess` / `VkPipelineStage` / `VkImageLayout`; present-mode map |
+| `mod.rs` | `Api` static dispatch, `Queue`, `Buffer` / `Texture` |
+
+Traits are static-dispatch (`vulkan::Api`). wgpu-core holds `Arc` so Vulkan
+destroy-order holds. `Queue::submit` is not a second `VkQueue`; it waits
+on surface-semaphore locks and a relay-semaphore mutex. You still have
+**one graphics queue** (`family_index = 0`). “Overlap” is CPU record vs
+last GPU frame, not a transfer queue.
+
+**Buffers and mapping (the ring).** HAL maps **persistently**.
+`Device::map_buffer` → `gpu-alloc` `block.map` → `vkMapMemory` returns
+`BufferMapping { ptr, is_coherent }`. The pointer can stay valid while the
+GPU reads if you barrier correctly. `unmap_buffer` is `vkUnmapMemory`.
+Non-coherent memory needs `flush_mapped_ranges` /
+`invalidate_mapped_ranges`. NVIDIA host-visible staging is usually
+coherent; wgpu-core still calls flush on unmap when the flag says so.
+
+WebGPU `map_async` is **not** HAL. Core waits on the last submit that used
+the buffer, then calls HAL map (or already had it mapped at creation).
+The 3 slots are three `VkBuffer`s with `HOST_VISIBLE` + `TRANSFER_SRC`.
+Dest VB is `DEVICE_LOCAL` + `VERTEX` + `TRANSFER_DST`.
+`MAPPABLE_PRIMARY_BUFFERS` would be a different memory type; this crate
+does not request it. `gpu-alloc` failures become `DeviceError::OutOfMemory`
+/ `Lost`, not `Validation`.
+
+**Commands and barriers.** One HAL encoder ≈ one `VkCommandPool` with
+recycled command buffers (`free` / `discarded`). `begin_encoding` gets a
+CB; `end_encoding` ends it.
+
+Copies: `copy_buffer_to_buffer` → `vkCmdCopyBuffer`;
+`copy_texture_to_buffer` → `vkCmdCopyImageToBuffer` with
+`VkBufferImageCopy`. `buffer_row_length` is `block_width * (bytes_per_row
+/ block_size)` in **texels**. The **256 B pitch was already enforced in
+core**. HAL trusts the numbers.
+
+Barriers are explicit and cheap to miss if you used HAL raw:
+
+```text
+transition_buffers  → vkCmdPipelineBarrier + VkBufferMemoryBarrier (WHOLE_SIZE)
+                      (src seeded TOP_OF_PIPE, dst BOTTOM_OF_PIPE so the mask is never null)
+transition_textures → VkImageMemoryBarrier + layout from/to
+```
+
+Core’s usage tracker emits `BufferBarrier { from: COPY_SRC, to: MAP_WRITE }`
+etc. This crate’s frame is:
+
+```text
+[pending write_buffer flush at submit start]
+barrier: VB COPY_DST
+vkCmdCopyBuffer  ring slot → VB
+barrier: VB VERTEX
+render pass   color COLOR_ATTACHMENT_OPTIMAL
+end pass
+barrier: color → TRANSFER_SRC_OPTIMAL     // if capture
+vkCmdCopyImageToBuffer
+submit
+present barrier → PRESENT_SRC_KHR         // windowed
+```
+
+**Textures vs Vulkan images.** HAL textures are optimal `VkImage`s. No
+linear tiling API. Layouts live only in `conv` + barriers (see the tiling
+section above). Capture never maps the image; it maps the **buffer** after
+the copy. Swapchain images are a separate object; headless has
+`surface=false` and never touches `PRESENT_SRC`.
+
+**Queue and present.** `Adapter::open` takes queue family 0 if it has
+`GRAPHICS`. One `VkQueue`. `submit` takes command buffers + a fence.
+Present uses mailbox/FIFO from surface caps; unrecognized mode
+`1000361000` is `log::warn!("Unrecognized present mode {:?}", mode)` in
+`conv.rs` `map_vk_present_mode` and ignored — that log line. No
+compute-only queue, no transfer-only queue. Particle copies and draws
+share that queue. A second `submit` would still be the same `VkQueue`.
+
+**What this crate should not do.**
+
+- Call `wgpu-hal` directly. You lose tracking; you must emit every barrier.
+- Expect two Vulkan queues to hide `map_async` latency.
+- Treat HAL persistent map as “skip `map_async`.” Core’s map state machine
+  is what makes `ready[]` legal.
+- Use linear images for capture. HAL will not give you
+  `vkGetImageSubresourceLayout` for the color target.
+
+RenderDoc attaches at this layer: you see the `vkCmd*` that `command.rs`
+recorded. The RON trace stops one level up. Validation errors stop
+**above** HAL. If HAL returns `DeviceError`, that is OOM/lost/internal,
+not `UnalignedBytesPerRow`.
+
+For qga-gpu the Vulkan backend is already the right shape: one queue,
+DEVICE_LOCAL VB, HOST_VISIBLE ring, implicit barriers from one encoder.
+The knobs you own stay in core-facing API (slot count, pitch helper, no
+`Wait` on write maps).
+
 ## Upload contract (from inner_cone)
 
 1. Tessellate static topology once (parametric sphere / cone / torus).

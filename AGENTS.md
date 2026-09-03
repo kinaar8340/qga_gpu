@@ -17,6 +17,7 @@ This crate owns the frame.
 - Do not depend on wgpu-core to downcast TransferError. Grep description. No VkResult under Validation.
 - Debug validation by the Caused by tree + fn_ident, not a numeric code. Cluster: map 8, copy 4, pitch 256, submit-while-mapped. Default panic; do not recover.
 - wgpu trace is a WebGPU API log; RenderDoc is a Vulkan frame capture. Opposite sides of wgpu-hal. wgpu 24 cannot record (gfx-rs/wgpu#5974). Counters are neither tool. RenderDoc on windowed 4090.
+- wgpu-hal/vulkan is ash on the 4090. Do not call HAL. One graphics queue (family 0). Persistent HAL maps ≠ skip map_async. Barriers come from one encoder.
 - Vulkan via wgpu only. No OpenGL. CUDA is out of scope for v0.
 
 ## Target machine

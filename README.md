@@ -153,7 +153,9 @@ Software fact:
   (RON + `player`); RenderDoc is a Vulkan frame capture — opposite sides
   of wgpu-hal. wgpu 24 cannot record traces. Validation → trace (when the
   dep allows); picture/barrier → RenderDoc on windowed 4090; counters
-  stay in-process. Neither on default `make ring`.
+  stay in-process. Neither on default `make ring`. On this box wgpu is
+  `ash` / `wgpu-hal::vulkan`: one graphics queue (family 0), HOST_VISIBLE
+  ring, DEVICE_LOCAL VB. Do not call HAL; do not skip `map_async`.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
 ## What this crate is not
