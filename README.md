@@ -71,8 +71,10 @@ shows `73de02d`.
 
 `capture` is the right local set for `inner_cone --export`. A `qga_gpu` `main`
 push can change record layout or feature defaults while `inner_cone`’s path
-dep stays frozen to the sibling tree. Pin a sha on the engine git dep before
-treating `qga-app` as a published consumer.
+dep stays frozen to the sibling tree. Leave the engine git float until
+`qga-app` pins `rev = "f263ea7"` (or the lock sha). After that, a
+record-layout change here cannot silently land in the published consumer
+while `inner_cone` stays on the sibling path.
 
 ## Dirty-flag / instance / persistent-particle policy
 
@@ -110,10 +112,16 @@ cargo run -p qga-gpu-demo --release -- --dirty-particles --frames 300
 
 Acceptance (dirty): `ring_copies + particle_fallbacks >= frames`,
 `particle_skipped == 0`, `static_uploads == 1`. Fallbacks are **allowed
-and counted**. This 4090: headless 300 first+last-capture → 1 fallback
-(CPU ahead of `map_async`); windowed FIFO 300 → 0 fallbacks (present
-paces reclaim). That is DMA into DEVICE_LOCAL, not a broken ring. Do not
-add a 4th slot unless windowed fallbacks exceed ~1%. Do not persist-map the particle VB through wgpu. Do not
+and counted**. This 4090 (`f263ea7`): headless 8 still → `static_uploads=1`,
+`ring_copies=1`, `particle_skipped=9`, `write_buffer=15` (uniforms / small
+pending-writes, not mesh rebuilds). Headless 300 dirty first+last-capture →
+`ring_copies=301`, `particle_fallbacks=0`, `particle_grows=0`. The extra copy
+is init or the first captured frame. Zero fallbacks means the 3-slot ring
+reclaimed before the CPU lapped `map_async`. Do **not** add a 4th slot on
+this result (only if windowed fallbacks exceed ~1%). Windowed FIFO 300 → 0
+fallbacks (present paces reclaim). That is DMA into DEVICE_LOCAL, not a
+broken ring. These numbers do **not** prove `inner_cone` mosaic / hull /
+live harmonics or `qga-app` realm / cosmos(4096). Do not persist-map the particle VB through wgpu. Do not
 `poll(Wait)` on write maps (`map_async` latency is 1–3 GPU frames;
 Wait serializes them). Do not put particles on `StagingBelt`.
 A 16 KiB belt is only for a future HUD/hub storm of tens of small

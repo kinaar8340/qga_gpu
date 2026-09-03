@@ -55,4 +55,6 @@ inner_cone @ 03e1fb2: path ../qga_gpu/crates/qga-gpu, features = ["capture"].
 Fiber conversion in geometry::gpu_fiber. Do not enable qga-math on this crate.
 qga_engine: git dep, no rev (floats on main). Features winit/headless/capture/glow.
 inner_cone has no headless binary; make headless / make ring here are the
-static_uploads == 1 and dirty-ring proof.
+static_uploads == 1 and dirty-ring proof (this 4090: 8 still su=1; 300 dirty
+rc=301 pf=0 pg=0). Does not prove inner_cone mosaic/hull or qga-app scenes.
+Engine git float until qga-app pins rev = f263ea7. Do not add a 4th ring slot.

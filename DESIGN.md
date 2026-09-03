@@ -97,18 +97,26 @@ non-goal.
 wgpu often allocates a short-lived staging chunk per call). Measured on this
 box, dirty 4k particles:
 
-| Harness | `ring_copies` | `particle_fallbacks` |
-|---------|---------------|----------------------|
-| Headless 300, capture first+last | 300 | 1 |
-| Windowed FIFO 300 | 301 | 0 |
+| Harness | `ring_copies` | `particle_fallbacks` | `particle_grows` |
+|---------|---------------|----------------------|------------------|
+| Headless 8 still, capture first+last | 1 | 0 | 0 |
+| Headless 300 dirty, capture first+last | 301 | 0 | 0 |
+| Windowed FIFO 300 dirty | 301 | 0 | 0 |
+
+8 still (`f263ea7` on this 4090): `static_uploads=1` (topology once).
+`particle_skipped=9` with `ring_copies=1` is hash-skip after the first field
+lands. `write_buffer=15` is uniforms / small pending-writes, not mesh rebuilds.
+
+300 dirty: `301 + 0 >= 300`, `particle_skipped=0`. The extra `ring_copies` is
+init or the first captured frame. Zero fallbacks means the 3-slot ring
+reclaimed before the CPU lapped `map_async`. Do **not** add a fourth slot on
+this result. A 1-fallback first+last run is still allowed (CPU ahead of
+`map_async`); it is not the operating point measured here.
 
 Full capture `Wait` every frame idles the GPU before the next write → 0
-fallbacks (hides pressure). First+last capture lets the CPU run ahead of
-`map_async` → one frame with no ready slot. FIFO present gates the CPU →
-reclaim always wins. **One fallback in 300 is healthy:** 3 in-flight is tight
-under no-vsync, not a reason to add a 4th slot (only if windowed fallbacks
-exceed ~1%). Do not `poll(Wait)` in the particle ring. Grow Waits, then
-rebuilds all three slots; keep `particle_grows == 0` at 4k.
+fallbacks (hides pressure). FIFO present gates the CPU → reclaim always wins.
+Do not `poll(Wait)` in the particle ring. Grow Waits, then rebuilds all three
+slots; `particle_grows=0` at 4k is the HAL steady state.
 
 Acceptance: dirty writes land as
 `ring_copies + particle_fallbacks >= frames`. Fallbacks are allowed and
@@ -117,7 +125,9 @@ DMA into DEVICE_LOCAL; map only HOST_VISIBLE staging; never wait the
 swapchain on capture.
 
 `UploadStats.static_uploads` is also the static-topology counter: default
-headless 8-frame run must print `static_uploads=1`.
+headless 8-frame run must print `static_uploads=1`. These demo numbers do
+**not** prove `inner_cone` mosaic / hull / live harmonics or `qga-app`
+realm / cosmos(4096). Those binaries still do not print `UploadStats`.
 
 ### `map_async` cost (Software fact)
 
@@ -152,8 +162,9 @@ frame’s map finished. Fallback = all three still waiting.
 Native Vulkan fat-map tax is smaller than in-browser, but `slice(..)` still
 marks the whole cap live. Payload-sized slots keep that honest.
 
-The 1/300 first+last-capture fallback is **map-async latency**, not memcpy.
-`poll(Wait)` after every `map_async` would zero fallbacks and destroy overlap
+A first+last-capture fallback, when it happens, is **map-async latency**,
+not memcpy. This 4090 sat at 0/300: reclaim beat the CPU. `poll(Wait)` after
+every `map_async` would also zero fallbacks and destroy overlap
 (serial-await). Hash skip still beats any map.
 
 Poll policy:
@@ -165,8 +176,10 @@ Poll policy:
 
 Do not add async/await wrappers, extra poll threads, or
 `on_submitted_work_done` per particle write. `particle_fallbacks` under dirty
-windowed vs first+last headless **is** the map-async overhead meter. 0–1 per
-300 frames at 128 KiB is the operating point. Do not map the VERTEX buffer.
+windowed vs first+last headless **is** the map-async overhead meter. 0 per
+300 frames at 128 KiB is the operating point on this 4090; 1 is still
+healthy. Do not add a 4th slot unless windowed fallbacks exceed ~1%.
+Do not map the VERTEX buffer.
 
 ## StagingBelt (Software fact — do not add for particles)
 
@@ -189,9 +202,9 @@ one-off chunk (`size.max(chunk_size)`).
 | Live fibers | rare (hash skip) | Later, only if many short centerlines per tick. |
 | Hubs / HUD / geo instances | packed `Vec` + one `write_grow` | **Yes, if** tens of copies per present. Not today. |
 
-Dirty 4090 runs: `ring_copies≈frames`, `particle_fallbacks` 0–1,
-`write_buffer≈1/frame` (uniforms). A particle belt would `map_async` the
-**whole** chunk — the fat-map trap if `chunk_size` ≫ 128 KiB.
+Dirty 4090 runs: `ring_copies≈frames` (301 on 300 dirty), `particle_fallbacks=0`,
+`write_buffer≈1/frame` (uniforms; 307 on 300 dirty). A particle belt would
+`map_async` the **whole** chunk — the fat-map trap if `chunk_size` ≫ 128 KiB.
 
 | | 3-slot particle ring | StagingBelt |
 |--|----------------------|-------------|

@@ -48,6 +48,11 @@ make ring       # 300 dirty frames; ring_copies + particle_fallbacks >= frames
 ```
 
 Fallbacks are allowed and counted. `particle_skipped == 0` when dirty.
+This 4090 (`f263ea7`): 8 still `static_uploads=1`; 300 dirty
+`ring_copies=301`, `particle_fallbacks=0`, `particle_grows=0`. That proves
+the demo sculpture is not retessellated. It does **not** prove `inner_cone`
+mosaic / hull / live harmonics or `qga-app` realm / cosmos(4096) — those
+binaries still do not print `UploadStats`.
 
 ## qga_engine
 
@@ -61,7 +66,10 @@ qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", features = ["winit", 
 **Risk:** no `rev`. `Cargo.lock` pins a sha until the next `cargo update -p
 qga-gpu`. A push to this repo’s `main` can change record layout or feature
 defaults while `inner_cone`’s path dep stays frozen to the sibling tree.
-Prefer `rev = "<sha>"` before treating `qga-app` as a published consumer.
+Leave this float as a written risk until `qga-app` pins
+`rev = "f263ea7"` (or the lock sha). After that, a record-layout change here
+cannot silently land in the published consumer while `inner_cone` stays on
+the sibling path.
 
 `qga-app --headless` does not print or assert `UploadStats`. Realm / cosmos /
 oam / reveal **scenes stay in qga-app / qga-sim**, not in this crate.

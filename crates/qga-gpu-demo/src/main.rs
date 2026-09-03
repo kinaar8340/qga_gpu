@@ -90,8 +90,9 @@ fn report_stats(
     );
     if dirty_particles {
         anyhow::ensure!(ps == 0, "dirty particles must not hash-skip ({ps})");
-        // Fallbacks counted, not fatal. 1/300 headless is HOST_VISIBLE reclaim
-        // lag, not a broken ring. Windowed FIFO should sit at pf == 0.
+        // Fallbacks counted, not fatal. This 4090 first+last headless sat at
+        // pf == 0 (ring reclaimed before CPU lapped map_async). Do not add a
+        // 4th slot on that result. Windowed FIFO should sit at pf == 0.
         let landed = rc + pf;
         anyhow::ensure!(
             landed >= u64::from(frames),
