@@ -398,6 +398,66 @@ BC texture; `write_texture` of MSAA; mapping the capture buffer at offset 1.
 BGRA8 full-frame origin 0 + padded pitch is the whole texture-alignment
 surface this renderer has.
 
+## wgpu “layout” vs Vulkan tiling and image layouts (Software fact)
+
+“Texture layout” is three things. wgpu exposes **one**. Vulkan exposes all
+three. On this 4090, wgpu-Vulkan already does the other two from usage flags
+and implicit barriers.
+
+| Meaning | Vulkan | wgpu / WebGPU |
+|---------|--------|---------------|
+| **Memory tiling** | `OPTIMAL` vs `LINEAR`; `vkGetImageSubresourceLayout` → `rowPitch` | Always opaque / optimal. No linear tiling, no GPU row-pitch query |
+| **Usage layout** | `VkImageLayout`: `COLOR_ATTACHMENT_OPTIMAL`, `TRANSFER_SRC_OPTIMAL`, `SHADER_READ_ONLY`, `PRESENT_SRC_KHR`, `GENERAL`, `UNDEFINED`, … | Hidden. Usage bits + pass load/store. Impl inserts `VkImageMemoryBarrier`s |
+| **CPU buffer for copies** | `VkBufferImageCopy`: `bufferRowLength` (texels; 0 = packed); pitch often 4 B / block, **not** a spec 256 | `TexelCopyBufferLayout`: `bytes_per_row` **% 256** on encoder copies |
+
+This crate’s “layout” is only the third: capture `padded_bpr`. You never pick
+tiling or `VkImageLayout`.
+
+Vulkan **linear** images are row-major in device memory (map + `rowPitch` if
+host-visible). Usually 2D, no depth, slow GPU access. **Optimal** images are
+tiled/swizzled/DCC; CPU cannot interpret the bytes. wgpu textures are
+optimal. There is no `TEXTURE_TILING_LINEAR` and no persistent map of a
+color target. Readback is always `copy_texture_to_buffer` into a linear
+**buffer**. That is why capture uses `padded_bpr`, not
+`vkGetImageSubresourceLayout`. Swapchain present is `PRESENT_SRC_KHR` after
+a transition wgpu owns.
+
+Vulkan you write `UNDEFINED → TRANSFER_DST → copy → SHADER_READ_ONLY` or
+`COLOR_ATTACHMENT → TRANSFER_SRC → copy to buffer → PRESENT`. Wrong
+old/new layout is a race or a discard. wgpu you set usages at create.
+Dawn/wgpu-core map a usage to a layout (`CopyDst` → `TRANSFER_DST_OPTIMAL`,
+attachment → `COLOR_ATTACHMENT_OPTIMAL`; combined usages often `GENERAL`)
+and barrier from the previous tracked use. “Cannot copy a texture that is
+still a color attachment in this pass” means: end the pass first.
+`VK_KHR_unified_image_layouts` is Vulkan catching up to stay in `GENERAL`.
+Load/store (`Clear` / `Load` / `DontCare`) map to `loadOp`/`storeOp` and
+whether the impl transitions from `UNDEFINED`. Scene pass `Clear`+`Store`
+is `COLOR_ATTACHMENT_OPTIMAL`, then a barrier to `TRANSFER_SRC` if capture
+runs.
+
+Vulkan `bufferRowLength = width` (800 texels → 3200 B) is legal. The same
+copy through wgpu **must** use 3328 B. `Queue::write_texture` is the escape:
+dense 3200, impl pads into Vulkan-legal staging. `bufferOffset` 0 is the
+portable choice (Metal 16 B on some paths).
+
+| wgpu object | Vulkan analogue |
+|-------------|-----------------|
+| Offscreen color (`RENDER_ATTACHMENT \| COPY_SRC`) | optimal `VkImage`, color + transfer src |
+| `begin_render_pass` | `COLOR_ATTACHMENT_OPTIMAL` |
+| `copy_texture_to_buffer` | barrier → `TRANSFER_SRC_OPTIMAL`, `vkCmdCopyImageToBuffer` with 256-aligned row pitch |
+| Capture buffer | host-visible **buffer**, not a linear image |
+| Swapchain present | barrier → `PRESENT_SRC_KHR` |
+| Particle VB | not an image; buffer copies, 4/8 |
+
+Porting a Vulkan uploader with `bufferRowLength = width` fails wgpu until
+you pad to 256. Porting wgpu capture to raw NVIDIA Vulkan can drop the 256
+pad. Never `PREINITIALIZED` + linear tiling through wgpu. Do not expect
+`GENERAL` vs `COLOR_ATTACHMENT_OPTIMAL` control for bloom vs capture —
+wgpu transitions when the encoder records the copy after the pass.
+
+Keep particles as DEVICE_LOCAL buffers. Keep color as optimal textures.
+Treat 256 B pitch as a **WebGPU-on-Vulkan tax**, not the GPU’s true tiling.
+
 `tests/layout.rs` pins both worlds: `size_of` % 4 and % 8; partial map
 `particle_ring_need_bytes(n) = n × 32` for odd `n`; empty `n = 0` is 0 and
 must not be mapped; grow ×2 from 128 KiB stays % 8; capture pitch

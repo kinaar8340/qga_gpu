@@ -1177,7 +1177,8 @@ impl Renderer {
             };
             if let Some(color) = src {
                 if let Some(staging) = color.staging.as_ref() {
-                    // Encoder texture copy: padded_bpr % 256, origin ZERO, samples 1.
+                    // Encoder copy into a linear buffer. Texture stays optimal-tiled;
+                    // 256 B pitch is WebGPU-on-Vulkan, not vkGetImageSubresourceLayout.
                     encoder.copy_texture_to_buffer(
                         wgpu::TexelCopyTextureInfo {
                             texture: &color.tex,

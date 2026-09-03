@@ -141,6 +141,7 @@ Software fact:
 - Frame uniforms are **256 bytes**.
 - Particle, fiber-point, hub, and orb-instance records are **32 bytes**.
 - Buffer copies/maps: 4 B / 8 B. Texture `bytes_per_row`: **256 B** (capture).
+  That pitch is WebGPU-on-Vulkan, not the 4090’s optimal tiling.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
 ## What this crate is not
