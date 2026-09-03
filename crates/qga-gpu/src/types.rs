@@ -8,6 +8,19 @@ const _: () = assert!(std::mem::size_of::<GpuParticle>() == 32);
 const _: () = assert!(std::mem::size_of::<GpuFiberPoint>() == 32);
 const _: () = assert!(std::mem::size_of::<GpuHub>() == 32);
 const _: () = assert!(std::mem::size_of::<GpuOrbInstance>() == 32);
+const _: () = assert!(std::mem::size_of::<GpuParticle>() as u64 % 8 == 0);
+const _: () = assert!(std::mem::size_of::<GpuParticle>() as u64 % 4 == 0);
+
+/// BGRA8 `bytes_per_row` for `copy_*_texture`. Portable pitch is 256, not 4/8.
+pub fn copy_bytes_per_row_bgra(width: u32) -> u32 {
+    let unpadded = width.saturating_mul(4);
+    unpadded.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
+}
+
+/// Bytes to map/copy for `n` particles. 0 means do not map (`map_async` size 0).
+pub fn particle_ring_need_bytes(n: usize) -> u64 {
+    (n * std::mem::size_of::<GpuParticle>()) as u64
+}
 
 /// 256-byte frame uniform block. wgpu uniform offset alignment is 256.
 /// Live params (aperture, height_scale, zener, time) live here so callers

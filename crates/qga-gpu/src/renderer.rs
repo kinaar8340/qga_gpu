@@ -890,9 +890,15 @@ impl Renderer {
         if particles.is_empty() {
             self.particles.n = 0;
             self.particle_hash = 0;
+            // Do not map 0..0 — wgpu size 0 is not a valid map/copy range.
             return Ok(());
         }
         let bytes = bytemuck::cast_slice(particles);
+        debug_assert_eq!(
+            bytes.len() as u64 % wgpu::MAP_ALIGNMENT,
+            0,
+            "particle map 0..need must be MAP_ALIGNMENT"
+        );
         let hash = fnv1a64(bytes);
         if hash == self.particle_hash && particles.len() as u32 == self.particles.n {
             self.stats.particle_skipped += 1;
@@ -1472,7 +1478,7 @@ fn bind_fiber(
 }
 
 impl ParticleRing {
-    /// 4096 particles × 32 B. Next-pow2 grow; not a 2 MiB arena.
+    /// 4096 particles × 32 B. Next-pow2 grow; cap stays MAP_ALIGNMENT (8).
     const MIN_CAP: u64 = 4096 * 32;
 
     fn new(device: &wgpu::Device, cap_bytes: u64) -> Self {
@@ -1597,10 +1603,8 @@ fn make_color_target(
             },
         ],
     });
-    // Texture copies only: bytes_per_row multiple of 256. Buffer copies stay at 4/8.
-    let unpadded = width * 4;
-    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-    let padded_bpr = unpadded.div_ceil(align) * align;
+    // Texture copies only: 256 B rows. Not COPY_BUFFER_ALIGNMENT / MAP_ALIGNMENT.
+    let padded_bpr = crate::types::copy_bytes_per_row_bgra(width);
     let staging = if with_staging {
         Some(gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("capture-staging"),

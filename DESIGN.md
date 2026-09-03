@@ -334,6 +334,15 @@ Refuse: map range not multiple of 8; `copy_buffer_to_buffer` of 2 bytes;
 `copy_texture_to_buffer` with `bytes_per_row = width * 4` when that is 3200.
 The ring never hits those if caps stay `max(32, next_pow2(n * 32))`.
 
+`tests/layout.rs` pins both worlds: `size_of` % 4 and % 8; partial map
+`particle_ring_need_bytes(n) = n × 32` for odd `n`; empty `n = 0` is 0 and
+must not be mapped; grow ×2 from 128 KiB stays % 8; capture pitch
+`copy_bytes_per_row_bgra` (1920/1280 exact, 800 → 3328). That is the portable
+wgpu contract, not a 4090 quirk. Do not merge HOST_VISIBLE buffer staging
+(4/8) with the capture MAP_READ buffer (`padded_bpr × height`). Do not put
+the particle field in a texture to dodge alignment — that swaps a solved
+32 B copy for a 256 B pitch path.
+
 ## Upload contract (from inner_cone)
 
 1. Tessellate static topology once (parametric sphere / cone / torus).
