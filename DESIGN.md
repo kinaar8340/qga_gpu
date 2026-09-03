@@ -76,11 +76,49 @@ records are 32 bytes.
 | Geodesic orb mesh | Tessellated once in `Renderer::new`. | Instances via `draw_geodesic_orb`. |
 | Particles | Persistent GPU VB + 3×128 KiB `MAP_WRITE` ring (grow ×2). | Skip if bytes unchanged (`particle_skipped`). Any ready slot; `write_buffer` only if none ready (`particle_fallbacks`). Never drop `pending`. Grows counted in `particle_grows`, not `fiber_reallocs`. |
 
-Do not add meshlets until `write_buffer_calls` vs `ring_copies` is profiled on
-this 4090. Tubes are shader-extruded from 32-byte `GpuFiberPoint` records.
+Tubes are shader-extruded from 32-byte `GpuFiberPoint` records. Do not add
+meshlets because of particle fallbacks.
 
-`UploadStats.static_uploads` is the acceptance counter: headless 8-frame run
-must print `static_uploads=1`.
+## Mapping on a discrete 4090 (Software fact)
+
+The particle VB is `VERTEX | COPY_DST` (DEVICE_LOCAL). The ring is three
+128 KiB `MAP_WRITE | COPY_SRC` buffers (HOST_VISIBLE + HOST_COHERENT staging).
+CPU writes the map forward-only, unmaps, GPU `copy_buffer_to_buffer` into VRAM.
+A slot is either mapped on the CPU **or** in a submitted copy, never both.
+
+wgpu will not give a persistent CPU pointer to that VERTEX buffer without
+`MAPPABLE_PRIMARY_BUFFERS`. Do not put the 4k field in BAR/ReBAR to skip the
+copy: vertex fetch from write-combine mapped VRAM is the wrong trade. Do not
+emulate `vkMapMemory` and leave it mapped — wgpu forbids using a `MAP_WRITE`
+buffer in a copy while it stays mapped. `StagingBelt` is for many tiny writes
+(HUD glyphs), not one 128 KiB blit. Compute-update of particles is a v0
+non-goal.
+
+`Queue::write_buffer` stays the fallback when zero slots are ready (native
+wgpu often allocates a short-lived staging chunk per call). Measured on this
+box, dirty 4k particles:
+
+| Harness | `ring_copies` | `particle_fallbacks` |
+|---------|---------------|----------------------|
+| Headless 300, capture first+last | 300 | 1 |
+| Windowed FIFO 300 | 301 | 0 |
+
+Full capture `Wait` every frame idles the GPU before the next write → 0
+fallbacks (hides pressure). First+last capture lets the CPU run ahead of
+`map_async` → one frame with no ready slot. FIFO present gates the CPU →
+reclaim always wins. **One fallback in 300 is healthy:** 3 in-flight is tight
+under no-vsync, not a reason to add a 4th slot (only if windowed fallbacks
+exceed ~1%). Do not `poll(Wait)` in the particle ring. Grow Waits, then
+rebuilds all three slots; keep `particle_grows == 0` at 4k.
+
+Acceptance: dirty writes land as
+`ring_copies + particle_fallbacks >= frames`. Fallbacks are allowed and
+counted. `static_uploads == 1`. `particle_skipped == 0` when dirty.
+DMA into DEVICE_LOCAL; map only HOST_VISIBLE staging; never wait the
+swapchain on capture.
+
+`UploadStats.static_uploads` is also the static-topology counter: default
+headless 8-frame run must print `static_uploads=1`.
 
 ## Upload contract (from inner_cone)
 
@@ -122,6 +160,7 @@ must print `static_uploads=1`.
 - Porting `qga-sim` worldgen, n-body ICs, or OAM twist PDE.
 - CUDA, OpenGL, WebGPU-in-browser.
 - N-body compute, meshlets, DLSS/FSR.
+- Persistent `vkMapMemory` / BAR-mapped particle VB through wgpu.
 - Claiming the Z-map or 350/π as theorems inside the renderer.
 - Vendoring all of `qga-math`.
 

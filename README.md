@@ -93,7 +93,13 @@ cargo run -p qga-gpu-demo --release -- --headless --frames 300 --dirty-particles
 cargo run -p qga-gpu-demo --release -- --dirty-particles --frames 300
 ```
 
-Headless capture used to `Wait` every frame, which hid ring pressure (`particle_fallbacks` stayed 0). First+last capture only; windowed `--dirty-particles` is the mailbox test.
+Acceptance (dirty): `ring_copies + particle_fallbacks >= frames`,
+`particle_skipped == 0`, `static_uploads == 1`. Fallbacks are **allowed
+and counted**. This 4090: headless 300 first+last-capture → 1 fallback
+(CPU ahead of `map_async`); windowed FIFO 300 → 0 fallbacks (present
+paces reclaim). That is DMA into DEVICE_LOCAL, not a broken ring. Do not
+add a 4th slot unless windowed fallbacks exceed ~1%. Do not
+persist-map the particle VB through wgpu.
 
 **Live vs static fibers.** Static separator / torus: `retain_static_fibers`.
 Live harmonics: `write_live_fibers` (same hash+radius no-op). Tubes are

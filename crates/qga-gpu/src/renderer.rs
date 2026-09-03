@@ -56,6 +56,7 @@ pub struct UploadStats {
     /// Particle staging/VB grew. Not mixed into `fiber_reallocs`.
     pub particle_grows: u64,
     /// `Queue::write_buffer` used for particles (zero slots ready).
+    /// Counted, allowed. One in 300 headless-no-vsync is healthy on a 4090.
     pub particle_fallbacks: u64,
     /// Times static fiber GPU buffers were actually written.
     pub static_uploads: u64,
@@ -108,6 +109,9 @@ struct FiberSlot {
     radius: f32,
 }
 
+/// 3-slot HOST_VISIBLE staging → DEVICE_LOCAL VB.
+/// A slot is mapped on the CPU or in a submitted copy, never both.
+/// Do not persist-map the VERTEX buffer (no `MAPPABLE_PRIMARY_BUFFERS`).
 struct ParticleRing {
     staging: [wgpu::Buffer; 3],
     ready: [Arc<AtomicBool>; 3],

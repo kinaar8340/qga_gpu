@@ -25,6 +25,7 @@ upload_hubs, write_hud,
 render(gpu, cam, vis, time, capture).
 Live uniforms: aperture, height_scale, zener, time.
 UploadStats.static_uploads counts real static fiber GPU writes (headless: == 1).
+Dirty particles: ring_copies + particle_fallbacks >= frames; fallbacks allowed.
 
 ## Optimization contract (from inner_cone)
 - Tessellate static topology once. Cones/spheres/tori are parametric.
