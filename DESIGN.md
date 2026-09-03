@@ -283,32 +283,55 @@ pass.
 
 ## Alignment and texture staging (Software fact)
 
-Portable wgpu constants. Ring records sit on the easy side. Capture pays the
-256 B **row** tax.
+Portable wgpu table (WebGPU + D3D12), not a 4090 quirk. Copy/map and bind
+are different problems. Texture row pitch is **not** a buffer-copy rule.
+`layout.rs` pins the subset this crate uses plus the full constant values.
 
-| Constant | Value | Applies to |
-|----------|-------|------------|
-| `COPY_BUFFER_ALIGNMENT` | **4** | `copy_buffer_to_buffer` offset + size; `clear_buffer`; `mapped_at_creation` size |
-| `MAP_ALIGNMENT` | **8** | `map_async` / `get_mapped_range` offset + size |
-| `VERTEX_STRIDE_ALIGNMENT` | **4** | vertex stride / offset |
-| Uniform bind offset | **256** | dynamic offset; this crate pads the whole UBO to 256 B |
-| Storage binding size | **4** | SSBO size multiple |
-| `QUERY_RESOLVE_BUFFER_ALIGNMENT` | **256** | query resolve dest |
-| `COPY_BYTES_PER_ROW_ALIGNMENT` | **256** | **only** `copy_*_texture` `bytes_per_row`, not `Queue::write_texture` |
+| Symbol | Value | Must be multiple of |
+|--------|-------|---------------------|
+| `COPY_BUFFER_ALIGNMENT` | **4** | `copy_buffer_to_buffer` / `clear_buffer` offset **and size**; `mapped_at_creation` buffer size |
+| `MAP_ALIGNMENT` | **8** | `map_async` / `get_mapped_range` offset **and size** |
+| `VERTEX_STRIDE_ALIGNMENT` | **4** | vertex offset and array stride |
+| Immediate data (WebGPU) | **4** | `set_immediates` ranges (wgpu 24 has no named const) |
+| Storage bind size | **4** | bound SSBO size (wgpu 24 has no named const) |
+| Uniform bind offset | **256** | dynamic uniform offset; this crate’s UBO is **256 B** |
+| `QUERY_RESOLVE_BUFFER_ALIGNMENT` | **256** | `resolve_query_set` dest offset |
+| `QUERY_SIZE` | **8** | one query slot |
+| `COPY_BYTES_PER_ROW_ALIGNMENT` | **256** | `copy_*_texture` **bytes_per_row only** — not `Queue::write_buffer` |
+
+`Queue::write_buffer` dest offset + size need **copy 4**, not map 8, unless
+you also map that dest. Belt: allocate size % 4; bump
+`max(user, MAP_ALIGNMENT)`. `create_buffer_init` pads content length to ≥4
+then copies the unpadded prefix.
+
+A range that is **mapped and then copied** must be % 8 (implies % 4):
+`0..8`, `0..32`, `8..40`, `n×32`. Illegal map: `0..4`, `0..12`. Illegal
+copy: offset 2, size 2 or 6. `need = 0` is not a legal map — skip (empty
+particles). Mappable staging **allocation** should be % 8 if you
+`map_async(0..cap)`. Grow ×2 from 128 KiB stays legal.
+`mapped_at_creation` alone only needs % 4.
 
 `create_buffer_init` rounds content length up to a multiple of 4. StagingBelt
 asserts copy size/offset % 4 == 0 and map align ≥ 8.
 
-| Record | Size | Legal because |
-|--------|------|----------------|
-| Frame uniforms | 256 B | UBO + copy + map |
-| Particle / fiber / hub / orb | 32 B | 32 % 8 == 0, 32 % 4 == 0 |
-| Fiber meta | 16 B | 16 % 8 == 0 |
-| Particle slot cap | 128 KiB | both |
-| Ring copy `need` | `n * 32` | always % 8 |
+| Record | Size | Copy 4 | Map 8 | Bind |
+|--------|------|--------|-------|------|
+| `GpuParticle` / fiber / hub / orb | 32 | yes | yes | vertex/storage |
+| `FiberMeta` | 16 | yes | yes | uniform |
+| `FrameUniforms` | 256 | yes | yes | UBO 256 |
+| `HudVert` | 24 | yes | yes | vertex |
+| `FaceVert` | 48 | yes | yes | vertex |
+| `LineVert` | 32 | yes | yes | vertex |
+| `need = n×32` | | yes | yes | — |
+| slot cap 128 KiB ×2 | | yes | yes | — |
 
-Do not upload an odd-sized HUD `Vec` without padding the **buffer copy size**
-to 4. Mapping `0..need` is valid when `need % 8 == 0`. Mapping `0..12` is not.
+This crate’s HUD vert is **24 B** (`[f32;2]` + `[f32;4]`), so `n×24` is
+always % 8. A **12 B** HUD record would copy (`% 4`) but mapping `0..12` is
+illegal; pad mapped/copy size to `align(n×12, 8)` or `write_buffer` without
+mapping. Do not copy `particles.len()` without `× 32`. Dynamic uniform
+offsets 256-aligned — one UBO at offset 0. Do not `resolve_query_set` into
+the particle VB (dest offset % 256).
+
 Uniform 256 B is a **bind** rule, not a copy rule: you can `write_buffer` 64 B
 into a 256 B UBO; you cannot bind a 64 B std140 range on all backends.
 

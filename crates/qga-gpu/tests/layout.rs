@@ -1,6 +1,6 @@
 use qga_gpu::{
-    copy_bytes_per_row_bgra, particle_ring_need_bytes, FiberMeta, FrameUniforms, GpuFiberPoint,
-    GpuHub, GpuOrbInstance, GpuParticle,
+    copy_bytes_per_row_bgra, particle_ring_need_bytes, FaceVert, FiberMeta, FrameUniforms,
+    GpuFiberPoint, GpuHub, GpuOrbInstance, GpuParticle, HudVert, LineVert,
 };
 use std::mem::size_of;
 
@@ -27,9 +27,17 @@ fn orb_instance_is_32_bytes() {
 }
 
 #[test]
-fn records_meet_map_and_copy_alignment() {
+fn wgpu_alignment_constants() {
     assert_eq!(wgpu::COPY_BUFFER_ALIGNMENT, 4);
     assert_eq!(wgpu::MAP_ALIGNMENT, 8);
+    assert_eq!(wgpu::VERTEX_STRIDE_ALIGNMENT, 4);
+    assert_eq!(wgpu::QUERY_RESOLVE_BUFFER_ALIGNMENT, 256);
+    assert_eq!(wgpu::QUERY_SIZE, 8);
+    assert_eq!(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 256);
+}
+
+#[test]
+fn records_meet_map_and_copy_alignment() {
     for n in [
         size_of::<FiberMeta>(),
         size_of::<GpuParticle>(),
@@ -37,9 +45,37 @@ fn records_meet_map_and_copy_alignment() {
         size_of::<GpuHub>(),
         size_of::<GpuOrbInstance>(),
         size_of::<FrameUniforms>(),
+        size_of::<HudVert>(),
+        size_of::<FaceVert>(),
+        size_of::<LineVert>(),
     ] {
         assert_eq!(n as u64 % wgpu::COPY_BUFFER_ALIGNMENT, 0);
         assert_eq!(n as u64 % wgpu::MAP_ALIGNMENT, 0);
+        assert_eq!(n as u64 % wgpu::VERTEX_STRIDE_ALIGNMENT, 0);
+    }
+}
+
+#[test]
+fn hud_face_line_sizes() {
+    // 24 B HUD, not 12 B. n×12 would copy (%4) but map 0..12 is illegal.
+    assert_eq!(size_of::<HudVert>(), 24);
+    assert_eq!(size_of::<FaceVert>(), 48);
+    assert_eq!(size_of::<LineVert>(), 32);
+    assert_eq!(12u64 % wgpu::COPY_BUFFER_ALIGNMENT, 0);
+    assert_ne!(12u64 % wgpu::MAP_ALIGNMENT, 0);
+}
+
+#[test]
+fn mapped_then_copied_spans_must_be_8() {
+    let map = wgpu::MAP_ALIGNMENT;
+    let copy = wgpu::COPY_BUFFER_ALIGNMENT;
+    for legal in [8u64, 16, 32, 40, 256, 128 * 1024] {
+        assert_eq!(legal % map, 0);
+        assert_eq!(legal % copy, 0);
+    }
+    for illegal_map in [4u64, 12] {
+        assert_eq!(illegal_map % copy, 0);
+        assert_ne!(illegal_map % map, 0);
     }
 }
 
