@@ -20,7 +20,7 @@ GpuContext, Renderer, Camera, VisualState,
 retain_static_fibers / write_live_fibers (hash + tube_radius no-op),
 retain_meshes (sphere/cone/torus tessellated once),
 draw_geodesic_orb(transform, color, lod),
-write_particles (staging ring; skip if unchanged),
+write_particles (3-slot ring; any ready slot; skip if unchanged; never drop pending),
 upload_hubs, write_hud,
 render(gpu, cam, vis, time, capture).
 Live uniforms: aperture, height_scale, zener, time.

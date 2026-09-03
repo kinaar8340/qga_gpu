@@ -74,7 +74,7 @@ records are 32 bytes.
 | Live fibers | Resident, grow ×2. | `write_live_fibers` only if hash or radius changed. |
 | Faces / lines / hubs / HUD | Resident, grow ×2. | On retain / explicit upload. |
 | Geodesic orb mesh | Tessellated once in `Renderer::new`. | Instances via `draw_geodesic_orb`. |
-| Particles | Persistent GPU vertex buffer + 3-slot `MAP_WRITE` ring. | Skip if bytes unchanged (`particle_skipped`). In-flight slot → `Queue::write_buffer` (counted). |
+| Particles | Persistent GPU VB + 3×128 KiB `MAP_WRITE` ring (grow ×2). | Skip if bytes unchanged (`particle_skipped`). Any ready slot; `write_buffer` only if none ready (`particle_fallbacks`). Never drop `pending`. Grows counted in `particle_grows`, not `fiber_reallocs`. |
 
 Do not add meshlets until `write_buffer_calls` vs `ring_copies` is profiled on
 this 4090. Tubes are shader-extruded from 32-byte `GpuFiberPoint` records.
@@ -91,7 +91,8 @@ must print `static_uploads=1`.
    `write_hud`, `render`.
 4. Tubes: `GpuFiberPoint` centerlines, camera-facing extrusion in `fiber.wgsl`.
    No CPU ribbon rebuild on camera/time.
-5. Particles: 3-slot `MAP_WRITE` staging ring + GPU vertex buffer.
+5. Particles: 3-slot `MAP_WRITE` ring. Prefer any ready slot. Fallback
+   `write_buffer` only if zero slots ready. Do not drop `pending`.
 6. Rebuild only aperture/height/zener-driven topology (caller sets
    `mark_static_dirty`). Camera and particles do not realloc fibers.
 

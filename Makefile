@@ -1,4 +1,4 @@
-.PHONY: check test demo headless
+.PHONY: check test demo headless ring
 
 check:
 	cargo check --workspace
@@ -11,3 +11,7 @@ demo:
 
 headless:
 	cargo run -p qga-gpu-demo --release -- --headless --frames 8
+
+# Particles dirty every frame: ring_copies should track frames.
+ring:
+	cargo run -p qga-gpu-demo --release -- --headless --frames 8 --dirty-particles

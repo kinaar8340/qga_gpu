@@ -53,6 +53,10 @@ pub struct UploadStats {
     pub write_buffer_calls: u64,
     pub ring_copies: u64,
     pub fiber_reallocs: u64,
+    /// Particle staging/VB grew. Not mixed into `fiber_reallocs`.
+    pub particle_grows: u64,
+    /// `Queue::write_buffer` used for particles (zero slots ready).
+    pub particle_fallbacks: u64,
     /// Times static fiber GPU buffers were actually written.
     pub static_uploads: u64,
     pub static_skipped: u64,
@@ -110,7 +114,8 @@ struct ParticleRing {
     gpu: wgpu::Buffer,
     cap_bytes: u64,
     cursor: usize,
-    pending: Option<(usize, u64)>,
+    /// Outstanding staging → GPU copies. Never dropped on fallback.
+    pending: Vec<(usize, u64)>,
     n: u32,
 }
 
@@ -510,8 +515,8 @@ impl Renderer {
         let live = make_fiber_slot(device, &fiber_layout, &dummy_fiber, "live");
         let static_fibers = make_fiber_slot(device, &fiber_layout, &dummy_fiber, "static");
 
-        let cap = HardwareProfile::THIS_BOX.particle_cap as u64 * 32;
-        let particles = ParticleRing::new(device, cap);
+        // 4k × 32 B = 128 KiB. Grow ×2 on cap miss. Do not map a fat arena.
+        let particles = ParticleRing::new(device, ParticleRing::MIN_CAP);
 
         let quad_vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("quad"),
@@ -893,11 +898,11 @@ impl Renderer {
         let need = bytes.len() as u64;
         if need > self.particles.cap_bytes {
             self.particles.grow(&gpu.device, need);
-            self.stats.fiber_reallocs += 1;
+            self.stats.particle_grows += 1;
         }
+        // Ready flags are set from map_async callbacks. Poll does not wait.
         gpu.device.poll(wgpu::Maintain::Poll);
-        let i = self.particles.cursor % 3;
-        if self.particles.ready[i].load(Ordering::SeqCst) {
+        if let Some(i) = self.particles.pick_ready() {
             {
                 let mut view = self.particles.staging[i]
                     .slice(0..need)
@@ -906,12 +911,12 @@ impl Renderer {
             }
             self.particles.staging[i].unmap();
             self.particles.ready[i].store(false, Ordering::SeqCst);
-            self.particles.pending = Some((i, need));
-            self.particles.cursor += 1;
+            self.particles.pending.push((i, need));
+            self.particles.cursor = i + 1;
         } else {
             gpu.queue.write_buffer(&self.particles.gpu, 0, bytes);
             self.stats.write_buffer_calls += 1;
-            self.particles.pending = None;
+            self.stats.particle_fallbacks += 1;
         }
         self.particles.n = particles.len() as u32;
         Ok(())
@@ -1010,18 +1015,22 @@ impl Renderer {
                 label: Some("frame"),
             });
 
-        let mut remap_slot = None;
-        if let Some((slot, bytes)) = self.particles.pending.take() {
-            encoder.copy_buffer_to_buffer(
-                &self.particles.staging[slot],
-                0,
-                &self.particles.gpu,
-                0,
-                bytes,
-            );
-            self.stats.ring_copies += 1;
-            remap_slot = Some(slot);
-        }
+        let remap_slots: Vec<usize> = self
+            .particles
+            .pending
+            .drain(..)
+            .map(|(slot, bytes)| {
+                encoder.copy_buffer_to_buffer(
+                    &self.particles.staging[slot],
+                    0,
+                    &self.particles.gpu,
+                    0,
+                    bytes,
+                );
+                self.stats.ring_copies += 1;
+                slot
+            })
+            .collect();
 
         {
             let color_view = &self.color.as_ref().unwrap().view;
@@ -1183,13 +1192,17 @@ impl Renderer {
         }
 
         gpu.queue.submit(Some(encoder.finish()));
-        if let Some(slot) = remap_slot {
+        // Reclaim the full slot cap so the next write can be any size ≤ cap.
+        // Cap is next-pow2 of payload, not a fat arena.
+        let cap = self.particles.cap_bytes;
+        for slot in remap_slots {
             let ready = self.particles.ready[slot].clone();
-            self.particles.staging[slot]
-                .slice(..)
-                .map_async(wgpu::MapMode::Write, move |res| {
+            self.particles.staging[slot].slice(0..cap).map_async(
+                wgpu::MapMode::Write,
+                move |res| {
                     ready.store(res.is_ok(), Ordering::SeqCst);
-                });
+                },
+            );
         }
         if let Some(frame) = swap {
             frame.present();
@@ -1451,8 +1464,11 @@ fn bind_fiber(
 }
 
 impl ParticleRing {
+    /// 4096 particles × 32 B. Next-pow2 grow; not a 2 MiB arena.
+    const MIN_CAP: u64 = 4096 * 32;
+
     fn new(device: &wgpu::Device, cap_bytes: u64) -> Self {
-        let cap_bytes = cap_bytes.max(32);
+        let cap_bytes = cap_bytes.max(Self::MIN_CAP);
         let mk = |i: usize| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("part-stage-{i}")),
@@ -1477,9 +1493,19 @@ impl ParticleRing {
             gpu,
             cap_bytes,
             cursor: 0,
-            pending: None,
+            pending: Vec::new(),
             n: 0,
         }
+    }
+
+    fn pick_ready(&self) -> Option<usize> {
+        for k in 0..3 {
+            let i = (self.cursor + k) % 3;
+            if self.ready[i].load(Ordering::SeqCst) {
+                return Some(i);
+            }
+        }
+        None
     }
 
     fn grow(&mut self, device: &wgpu::Device, need: u64) {
@@ -1487,6 +1513,7 @@ impl ParticleRing {
         while cap < need {
             cap *= 2;
         }
+        // Dest VB is replaced; in-flight copies to the old VB cannot land.
         device.poll(wgpu::Maintain::Wait);
         for i in 0..3 {
             if self.ready[i].load(Ordering::SeqCst) {
@@ -1515,7 +1542,7 @@ impl ParticleRing {
             mapped_at_creation: false,
         });
         self.cap_bytes = cap;
-        self.pending = None;
+        self.pending.clear();
         self.cursor = 0;
     }
 }

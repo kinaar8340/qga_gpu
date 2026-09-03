@@ -19,15 +19,19 @@ const N_PARTICLES: usize = 4096;
 struct Args {
     headless: bool,
     frames: u32,
+    /// Mutate particles every frame so the ring is exercised (no hash skip).
+    dirty_particles: bool,
 }
 
 fn parse_args() -> Args {
     let mut headless = false;
     let mut frames = 0;
+    let mut dirty_particles = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
             "--headless" => headless = true,
+            "--dirty-particles" => dirty_particles = true,
             "--frames" => {
                 frames = it.next().and_then(|s| s.parse().ok()).unwrap_or(8);
             }
@@ -37,7 +41,11 @@ fn parse_args() -> Args {
     if headless && frames == 0 {
         frames = 8;
     }
-    Args { headless, frames }
+    Args {
+        headless,
+        frames,
+        dirty_particles,
+    }
 }
 
 fn scene_meshes() -> Vec<Mesh> {
@@ -93,7 +101,7 @@ fn upload_static(gpu: &GpuContext, renderer: &mut Renderer) -> Result<()> {
     Ok(())
 }
 
-fn run_headless(frames: u32) -> Result<()> {
+fn run_headless(frames: u32, dirty_particles: bool) -> Result<()> {
     let mut gpu = GpuContext::init_headless().context("init_headless")?;
     println!("{}", gpu.report());
     let mut renderer = Renderer::new(&gpu)?;
@@ -105,14 +113,22 @@ fn run_headless(frames: u32) -> Result<()> {
         ..VisualState::default()
     };
     upload_static(&gpu, &mut renderer)?;
-    let particles = spawn_particles();
+    let mut particles = spawn_particles();
     renderer.write_particles(&gpu, &particles)?;
-    // Identical rewrite must no-op.
-    renderer.write_particles(&gpu, &particles)?;
+    if !dirty_particles {
+        // Identical rewrite must no-op.
+        renderer.write_particles(&gpu, &particles)?;
+    }
     renderer.retain_meshes(&gpu, &scene_meshes(), 1)?;
 
     let mut last_bytes = 0usize;
     for i in 0..frames.max(1) {
+        if dirty_particles {
+            let dy = 1.0e-4 * (i as f32 + 1.0);
+            for p in &mut particles {
+                p.pos[1] += dy;
+            }
+        }
         renderer.write_particles(&gpu, &particles)?;
         let captured = renderer.render(&mut gpu, &camera, &vis, i as f32 * 0.016, true)?;
         if let Some(frame) = captured {
@@ -132,13 +148,22 @@ fn run_headless(frames: u32) -> Result<()> {
     let ss = s.static_skipped;
     let ls = s.live_skipped;
     let ps = s.particle_skipped;
+    let pg = s.particle_grows;
+    let pf = s.particle_fallbacks;
     println!(
-        "done frames={frames} capture_bytes={last_bytes} write_buffer={wb} ring_copies={rc} static_uploads={su} static_skipped={ss} live_skipped={ls} particle_skipped={ps}"
+        "done frames={frames} capture_bytes={last_bytes} write_buffer={wb} ring_copies={rc} static_uploads={su} static_skipped={ss} live_skipped={ls} particle_skipped={ps} particle_grows={pg} particle_fallbacks={pf}"
     );
     anyhow::ensure!(
         su == 1,
         "static fiber buffers were written {su} times; expected static_uploads == 1"
     );
+    if dirty_particles {
+        anyhow::ensure!(ps == 0, "dirty particles must not hash-skip ({ps})");
+        anyhow::ensure!(
+            rc >= u64::from(frames),
+            "ring_copies={rc} expected >= {frames} when particles are dirty every frame"
+        );
+    }
     Ok(())
 }
 
@@ -294,7 +319,7 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = parse_args();
     if args.headless {
-        run_headless(args.frames)
+        run_headless(args.frames, args.dirty_particles)
     } else {
         run_windowed()
     }

@@ -72,10 +72,18 @@ against a unit sphere retained at `Renderer::new`. One mesh, N instances
 (`GpuOrbInstance`, 32 bytes: offset, scale, color, lod).
 
 **Persistent particles.** `write_particles` keeps a GPU vertex buffer and a
-3-slot `MAP_WRITE` staging ring. CPU does not `Vec` rebuild + full
-`Queue::write_buffer` every frame unless the bytes changed (`particle_skipped`)
-or the in-flight slot falls back to `write_buffer` (counted). Grow ×2 on cap
-miss only.
+3-slot `MAP_WRITE` staging ring (128 KiB slots, grow ×2). Hash skip
+(`particle_skipped`) is the cheapest path. When bytes change: pick **any**
+ready slot, memcpy, queue a `copy_buffer_to_buffer` on the next `render`.
+`Queue::write_buffer` only if **zero** slots are ready (`particle_fallbacks`);
+outstanding `pending` copies are never dropped. `particle_grows` is counted
+apart from `fiber_reallocs`. Reclaim maps the slot cap (tight pow2, not a fat
+arena). Profile `ring_copies` vs `particle_fallbacks` on this 4090 before
+meshlets. Dirty-every-frame smoke:
+
+```bash
+cargo run -p qga-gpu-demo --release -- --headless --frames 8 --dirty-particles
+```
 
 **Live vs static fibers.** Static separator / torus: `retain_static_fibers`.
 Live harmonics: `write_live_fibers` (same hash+radius no-op). Tubes are
