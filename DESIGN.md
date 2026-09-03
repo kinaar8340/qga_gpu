@@ -90,8 +90,7 @@ wgpu will not give a persistent CPU pointer to that VERTEX buffer without
 `MAPPABLE_PRIMARY_BUFFERS`. Do not put the 4k field in BAR/ReBAR to skip the
 copy: vertex fetch from write-combine mapped VRAM is the wrong trade. Do not
 emulate `vkMapMemory` and leave it mapped — wgpu forbids using a `MAP_WRITE`
-buffer in a copy while it stays mapped. `StagingBelt` is for many tiny writes
-(HUD glyphs), not one 128 KiB blit. Compute-update of particles is a v0
+buffer in a copy while it stays mapped. Compute-update of particles is a v0
 non-goal.
 
 `Queue::write_buffer` stays the fallback when zero slots are ready (native
@@ -120,6 +119,38 @@ swapchain on capture.
 `UploadStats.static_uploads` is also the static-topology counter: default
 headless 8-frame run must print `static_uploads=1`.
 
+## StagingBelt (Software fact — do not add for particles)
+
+`wgpu::util::StagingBelt` is wgpu’s arena over the same MAP_WRITE + COPY_SRC
+ring this crate built by hand. It wins when **one submit contains many small
+copies**. It does not beat a dedicated 128 KiB particle slot.
+
+Belt chunks: `active` (mapped, bump this frame) → `finish` unmaps → submit →
+`recall` `map_async` → `free`. `Queue::write_buffer` still often allocates a
+short-lived chunk **per call**. The belt amortizes map/unmap across N writes
+on the **same** encoder. Chunk size must be larger than the biggest write and
+about ¼–1× bytes per `finish()`. A write that will not fit allocates a
+one-off chunk (`size.max(chunk_size)`).
+
+| Upload | Size / cadence | Belt? |
+|--------|----------------|-------|
+| Particles (dirty) | one 128 KiB blit / frame | **No.** 3-slot ring is the belt with `chunk_size = payload`. |
+| Frame uniforms | 256 B / frame | **No.** One `write_buffer` cheaper than finish/recall. |
+| Static fibers / meshes | once (`static_uploads=1`) | **No.** |
+| Live fibers | rare (hash skip) | Later, only if many short centerlines per tick. |
+| Hubs / HUD / geo instances | packed `Vec` + one `write_grow` | **Yes, if** tens of copies per present. Not today. |
+
+Dirty 4090 runs: `ring_copies≈frames`, `particle_fallbacks` 0–1,
+`write_buffer≈1/frame` (uniforms). A particle belt would `map_async` the
+**whole** chunk — the fat-map trap if `chunk_size` ≫ 128 KiB.
+
+If inner_cone later storms HUD/hubs (`write_buffer_calls` tens per present):
+add a **16–64 KiB** belt on that path only, dest still DEVICE_LOCAL
+`VERTEX|COPY_DST`. Count `belt_writes` / `belt_chunks` separately from
+`ring_copies` / `particle_fallbacks`. Do not enable
+`MAPPABLE_PRIMARY_BUFFERS`. Do not `Wait` on `recall`. Cap ~3 chunks in
+flight, same as 3 slots. One encoder per frame.
+
 ## Upload contract (from inner_cone)
 
 1. Tessellate static topology once (parametric sphere / cone / torus).
@@ -143,6 +174,7 @@ headless 8-frame run must print `static_uploads=1`.
 3. **Frame uniforms are 256 bytes**, not the engine's 272 (cosmos `palette` pad).
 4. **Shader tube extrusion** instead of CPU `RibbonVert` (48 B).
 5. **Particle staging ring** instead of realloc + `write_buffer` on every path.
+   Not `StagingBelt`: one 128 KiB blit/frame is the wrong shape for a belt.
 6. **Headless actually renders** to an offscreen color target. The engine
    returned `Ok(None)` with no surface.
 7. **Parametric mesh helpers** are tessellation (Software fact), not observer
@@ -161,6 +193,7 @@ headless 8-frame run must print `static_uploads=1`.
 - CUDA, OpenGL, WebGPU-in-browser.
 - N-body compute, meshlets, DLSS/FSR.
 - Persistent `vkMapMemory` / BAR-mapped particle VB through wgpu.
+- `StagingBelt` on the particle path.
 - Claiming the Z-map or 350/π as theorems inside the renderer.
 - Vendoring all of `qga-math`.
 

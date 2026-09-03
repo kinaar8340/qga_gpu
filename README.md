@@ -99,7 +99,9 @@ and counted**. This 4090: headless 300 first+last-capture → 1 fallback
 (CPU ahead of `map_async`); windowed FIFO 300 → 0 fallbacks (present
 paces reclaim). That is DMA into DEVICE_LOCAL, not a broken ring. Do not
 add a 4th slot unless windowed fallbacks exceed ~1%. Do not
-persist-map the particle VB through wgpu.
+persist-map the particle VB through wgpu. Do not put particles
+on `StagingBelt` (one 128 KiB blit/frame). A 16 KiB belt is only
+for a future HUD/hub storm of tens of small copies per present.
 
 **Live vs static fibers.** Static separator / torus: `retain_static_fibers`.
 Live harmonics: `write_live_fibers` (same hash+radius no-op). Tubes are

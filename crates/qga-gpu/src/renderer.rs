@@ -1380,6 +1380,8 @@ fn grow_init(
     GrowBuf { buf, cap, count: 0 }
 }
 
+/// Packed `Vec` → one `write_buffer`. A StagingBelt is only worth it if this
+/// is called tens of times per present (HUD/hub storm), not for particles.
 fn write_grow(
     gpu: &GpuContext,
     slot: &mut GrowBuf,

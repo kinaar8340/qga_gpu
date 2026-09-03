@@ -33,6 +33,7 @@ Dirty particles: ring_copies + particle_fallbacks >= frames; fallbacks allowed.
 - Instance repeated geodesic orbs.
 - Tubes from centerline + shader extrusion, not CPU ribbon rebuild.
 - Profile Queue::write_buffer before adding meshlets.
+- StagingBelt only if tens of small copies per present; never on the 128 KiB particle blit.
 
 ## Features
 default = ["winit"]
