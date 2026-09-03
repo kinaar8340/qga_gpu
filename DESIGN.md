@@ -146,10 +146,72 @@ Dirty 4090 runs: `ring_copies≈frames`, `particle_fallbacks` 0–1,
 
 If inner_cone later storms HUD/hubs (`write_buffer_calls` tens per present):
 add a **16–64 KiB** belt on that path only, dest still DEVICE_LOCAL
-`VERTEX|COPY_DST`. Count `belt_writes` / `belt_chunks` separately from
+`VERTEX|COPY_DST`. Count `belt_writes` / `belt_chunks_created` separately from
 `ring_copies` / `particle_fallbacks`. Do not enable
 `MAPPABLE_PRIMARY_BUFFERS`. Do not `Wait` on `recall`. Cap ~3 chunks in
 flight, same as 3 slots. One encoder per frame.
+
+Belt `allocate`: (1) first **active** chunk with room after
+`align_to(offset, max(user_align, MAP_ALIGNMENT))`; (2) drain `map_async`
+into **free**; (3) first free chunk that fits; (4) else
+`create_buffer(size.max(chunk_size), MAP_WRITE|COPY_SRC, mapped_at_creation)`.
+`finish` unmaps every active chunk **even if 1% full**. `recall` remaps
+**full range**. Offset resets only when a chunk returns to free.
+
+| Symptom | Cause |
+|---------|--------|
+| Chunk count grows every frame | `recall` after a submit that never happens, or CPU ahead of `map_async` (same as `particle_fallbacks`) |
+| Many chunks, barely used | `chunk_size` ≫ per-`finish` bytes, or one write > remaining space |
+| One huge chunk per write | single write > `chunk_size` → one-off `size`, never reuses well |
+| Map cost scales with cap not payload | `recall` maps the whole chunk |
+
+Steady state after warmup: **created ≈ 2–3**, `free+active+closed` bounded,
+`bytes_written / capacity` not ≪ 1. On `make ring-windowed`, if
+`belt_chunks_created` (when a belt exists) climbs past ~4, `recall` is late
+or `chunk_size` is smaller than the largest write.
+
+| Per-submit payload | `chunk_size` | After 300 frames |
+|--------------------|--------------|------------------|
+| 256 B uniforms only | 16 KiB | 2–3 resident, ~1.5% full — waste, still cheap |
+| uniforms + HUD + hubs (~2–8 KiB) | 16 KiB | good |
+| + one 128 KiB particle blit | ≥128 KiB | particles steal the belt; the ring is better |
+| 128 KiB particles + 256 B | 256 KiB | fat map; worse than a tight slot |
+
+## Queue submit (Software fact — pattern A)
+
+Two streams meet at `submit`: wgpu **pending-writes** (`Queue::write_buffer`
+memcpy into impl staging, GPU copy flushed **at the start of the next
+submit**), then your `CommandBuffer`s. `submit([])` flushes pending-writes.
+Staging is released after **that** submit retires. Many `write_buffer`s with
+no submit = many live impl stagings (CubeCL flushes every 64). This crate
+does ~1 `write_buffer`/frame plus rare mesh — no empty-submit in the present
+loop.
+
+```
+write_particles            // map slot or fallback write_buffer (pending-writes)
+write_buffer(uniforms)     // pending-writes
+encoder:
+  copy staging → particle VB
+  render / blit / optional capture
+submit([encoder])          // pending-writes first, then encoder
+map_async particle slot
+present
+```
+
+That is **one encoder, one submit**. Particle copies live on the encoder
+(`ring_copies`). Uniforms live on pending-writes (`write_buffer_calls`). A
+belt would move small copies onto the encoder and add `finish`/`recall`; it
+would not change submit count.
+
+Do **not**: upload-then-draw double `submit` (128 KiB + 256 B is not a fat
+stream); `submit([])` mid-present; submit while a buffer is mapped (ring
+unmaps before `pending`; belt `finish` unmaps first; capture maps **after**
+submit, first+last only); a transfer queue (wgpu v0 is one graphics queue —
+overlap is CPU record vs GPU previous frame).
+
+Keep DEST DEVICE_LOCAL. One graphics submit per present until
+`write_buffer_calls` per frame is tens, or you stream megabytes before the
+pass.
 
 ## Upload contract (from inner_cone)
 

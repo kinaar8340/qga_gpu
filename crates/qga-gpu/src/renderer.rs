@@ -1009,6 +1009,7 @@ impl Renderer {
             vis.height_scale,
             vis.zener,
         );
+        // Pending-writes stream. Flushed at the start of submit, before this encoder.
         gpu.queue
             .write_buffer(&self.frame.buffer, 0, bytemuck::bytes_of(&uniforms));
         self.stats.write_buffer_calls += 1;

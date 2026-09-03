@@ -102,6 +102,8 @@ add a 4th slot unless windowed fallbacks exceed ~1%. Do not
 persist-map the particle VB through wgpu. Do not put particles
 on `StagingBelt` (one 128 KiB blit/frame). A 16 KiB belt is only
 for a future HUD/hub storm of tens of small copies per present.
+Frame loop is one encoder + one `submit` (pending-writes then the pass).
+Empty `submit([])` is for asset load, not the present loop.
 
 **Live vs static fibers.** Static separator / torus: `retain_static_fibers`.
 Live harmonics: `write_live_fibers` (same hash+radius no-op). Tubes are
