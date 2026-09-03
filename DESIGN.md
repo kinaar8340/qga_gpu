@@ -759,113 +759,126 @@ Do not turn validation into a recovery path. The debug job is to make
 
 ### wgpu API traces vs RenderDoc (Software fact)
 
-wgpu has its own API trace (RON + blobs), replayed by the in-tree `player`.
-That is **not** RenderDoc and not a Vulkan command stream. For this crate,
-use it only to ship a failing sequence; use RenderDoc/Nsight on the 4090
-for GPU-side work.
-
-`wgpu-core` feature `trace` records every device call as `Action`s into a
-directory:
+wgpu trace is a **WebGPU API log**. RenderDoc is a **Vulkan (or D3D) frame
+capture**. They sit on opposite sides of wgpu-hal. Use them for different
+bugs.
 
 ```text
-trace.ron          # RON list of Action { CreateBuffer, WriteBuffer, Submit, ... }
-*.bin / data files # buffer/texture payloads referenced from RON
+qga-gpu  write_particles / encoder / submit
+    ↓
+wgpu-core Actions          ← TRACE (RON + blobs)
+    ↓
+wgpu-hal Vulkan
+    ↓
+vkCmd* / images / pipelines  ← RENDERDOC
+    ↓
+4090
 ```
+
+Trace never sees `VkImageLayout` or tiled color. RenderDoc never sees
+`map_async` callbacks, `ErrorFilter`, or `particle_fallbacks`.
 
 **This crate is wgpu 24.** `request_device` still takes a positional
-`trace_path: Option<&Path>` (`context.rs` passes `None`). The frontend
-`trace` feature is **commented out** pending [gfx-rs/wgpu#5974](https://github.com/gfx-rs/wgpu/issues/5974); a `Some(path)`
-logs `Feature 'trace' has been removed temporarily` and wgpu-core still
-gets `None`. Do not add `--features trace` to `qga-gpu` until the dep can
-record.
+`trace_path` (`context.rs` passes `None`). The frontend `trace` feature is
+**commented out** pending [gfx-rs/wgpu#5974](https://github.com/gfx-rs/wgpu/issues/5974);
+a `Some(path)` logs that tracing was removed and wgpu-core still gets
+`None`. Do not add `--features trace` until the dep can record. Later wgpu
+uses `DeviceDescriptor { trace: Trace::Directory(path), .. }` (`Trace::Off`
+by default). `WGPU_TRACE=/path` is Gecko, not this `request_device`.
 
-Later wgpu (after #7286 / restored tracing) uses a field, not a positional
-path:
+| | wgpu `trace.ron` + data | RenderDoc `.rdc` |
+|---|-------------------------|------------------|
+| Unit | device API call (`CreateBuffer`, `WriteBuffer`, `Submit`) | GPU work in one present (or a range) |
+| Buffers | sizes, usages, **CPU payloads** as files | device-visible contents at event |
+| Textures | create + copy layout (`bytes_per_row`) | tiled/optimal image, sampled views |
+| Shaders | WGSL recorded as data | SPIR-V that actually ran |
+| Sync | submit / map actions as text | barriers, layout transitions wgpu inserted |
+| Time | lockstep, no clocks | timestamps, duration per event |
+| Surface | swapchain actions if any | present; Firefox traces often **no** swapchain |
+| Size | small API + every upload blob | large; one 1920×1080 frame + resources |
 
-```rust
-DeviceDescriptor {
-    trace: wgpu::Trace::Directory("./wgpu-trace".into()), // feature "trace"
-    ..Default::default()
-}
-```
+| Symptom | Tool |
+|---------|------|
+| `UnalignedBytesPerRow`, `UsageMismatch`, map `0..12` | **Trace** (and `layout.rs`) |
+| Submit-while-mapped, missing `COPY_SRC` | Either; trace is enough |
+| Capture nonempty but wrong pitch packing | Trace shows bpr; RenderDoc shows the image |
+| Black frame, validation clean | **RenderDoc** — pass targets, viewport, draw counts |
+| Bloom / glow look wrong | RenderDoc texture viewer |
+| `particle_fallbacks`, ring slot rotation | **Neither** — CPU counters; trace only shows the copies that happened |
+| “Is the tube extruded?” | RenderDoc mesh/VS output |
+| File a wgpu issue on another machine | **Trace** + matching player revision |
+| Nsight occupancy / PCIe | RenderDoc adjacent; not the RON player |
 
-`Trace::Off` is the default. Folder must exist. Crash mid-run: append `]`
-to `trace.ron` or the player dies on RON EOF. Replay must use a **matching
-wgpu revision**. Backend is a field in the RON; you can edit `Vulkan` →
-`Dx12` as text, but resources/limits may not survive that.
+`gfx-rs/subscriber` (Chrome trace JSON) is archived CPU spans. Use
+`RUST_LOG`. WebGPUReconstruct is browser WebGPU, not this native crate.
 
-Older wiki: `WGPU_TRACE=/path` still works in **Gecko**. Rust apps set the
-descriptor/`trace_path` and depend on `wgpu` with `features = ["trace"]`.
-Do not confuse that env with this crate’s `request_device`.
+**How you capture on this box.**
 
-**Player** is an in-tree crate in the `wgpu` repo, not this extract:
-
-```text
-cd wgpu/player
-cargo run --features winit -- /path/to/trace     # swapchain traces
-cargo run -- /path/to/trace                      # headless / no surface
-```
-
-- **winit**: presents each recorded frame, then waits for close. Use for
-  `make ring-windowed` traces.
-- **no winit**: console replay. Use for `--headless` / first+last capture
-  (no swapchain in the trace, like Firefox canvas-to-texture).
-
-Player is a sequential re-execution of API calls, not a time-scrubber. It
-will re-hit the same `UnalignedBytesPerRow` if that call is in the log. It
-will **not** show NVIDIA tile layouts or shader SGPR counts. `player` lib
-(`Player` struct) exists for embedding; you do not need it in qga-gpu.
-
-| Tool | Records | Replay / inspect | Use here |
-|------|---------|------------------|----------|
-| wgpu `trace` + `player` | WebGPU/wgpu-core API | same wgpu, any machine | share a bug, bisect wgpu versions |
-| RenderDoc | Vulkan/D3D after wgpu-hal | frame debugger | draws, copies, barriers on the 4090 |
-| Nsight / RGP | vendor GPU | profiler | occupancy, not API validation |
-| WebGPUReconstruct | browser WebGPU | native Dawn/wgpu + RenderDoc | not this native crate |
-| `WGPU_TRACE` in Firefox | same RON as above | player **without** winit | comparing browser vs native |
-
-`gfx-rs/subscriber` (Chrome trace JSON) is CPU span logging, archived. Use
-`RUST_LOG` instead.
-
-A short dirty headless run is the right capture **once tracing works**:
+Trace (once the dep restores it):
 
 ```text
 mkdir -p /tmp/qga-wgpu-trace
-# wgpu 24: cannot record. Later: DeviceDescriptor.trace = Directory(...)
-# cargo run -p qga-gpu-demo --release --features trace -- --headless --frames 8 --dirty-particles
+DeviceDescriptor { trace: Trace::Directory(path), .. }   # feature "trace"
+cargo run -p qga-gpu-demo --release --features trace -- --headless --frames 8 --dirty-particles
+cd wgpu/player && cargo run -- /tmp/qga-wgpu-trace       # no winit: headless
+# cargo run --features winit -- path                     # swapchain traces
 ```
 
+Needs `wgpu` feature `trace`. Folder must exist. Crash: close the `]` in
+`trace.ron` or the player dies on RON EOF. Replay is the same API stream
+on a **matching wgpu revision**; the backend field in RON is editable
+(`Vulkan` → `Dx12`) but brittle. Player is sequential, not a time-scrubber.
+It will re-hit `UnalignedBytesPerRow`. It will not show NVIDIA tiling or
+SGPR counts. You do not embed `Player` in qga-gpu.
+
 You should see in RON, in order: create UBO, 3 ring slots, dest VB, color
-target, capture buffer; per frame `WriteBuffer` uniforms, `CopyBufferToBuffer`
-particles, render pass, maybe `CopyTextureToBuffer` on frame 0 and last;
-`Submit`; `MapAsync`.
+target, capture buffer; per frame `WriteBuffer` uniforms,
+`CopyBufferToBuffer` particles, render pass, maybe `CopyTextureToBuffer`
+on frame 0 and last; `Submit`; `MapAsync`.
 
-What the trace **does not** preserve well:
+RenderDoc: launch `qga-gpu-demo` windowed (`mailbox=true`, 1280×720).
+Headless has no present; RenderDoc can still inject if you capture after
+`submit`, but the easy path is `make ring-windowed`. You will see:
 
-- Timing / mailbox vs FIFO (player is lockstep)
-- Which ring **slot** was ready (`ready[]` is CPU state)
-- `particle_fallbacks` — that is your counter, not an Action
-- `map_async` latency (replay will `Wait` differently)
+- `vkCmdCopyBuffer` = ring slot → VB
+- `vkCmdDraw` / indexed draws for fibers
+- `vkCmdCopyImageToBuffer` = capture
+- implicit `VkImageMemoryBarrier` COLOR_ATTACHMENT → TRANSFER_SRC
 
-What it **does** preserve:
+You will **not** see three MAP_WRITE slots as “mapped”; they are
+host-visible buffers. The copy is the GPU event.
 
-- Exact `bytes_per_row` and copy extents (the 3200 vs 3328 bug)
-- Buffer usages (`MAP_WRITE|VERTEX` mismatch)
-- Submit while mapped
-- Shader module source if recorded as data files
+Firefox-style traces should be replayed **without** winit so RenderDoc can
+attach to the player’s offscreen texture. This demo is native; attach
+RenderDoc to the **demo**, not the player.
 
-**Policy.** Do **not** enable `trace` on `origin/main` default features.
-Disk + serialize every `write_buffer` wrecks `make ring`. Do not bump wgpu
-just to get traces. After a dep that restores tracing: optional
-`--features trace` + `Trace::Off` by default; set a directory only under
-`QGA_WGPU_TRACE=...`. Prefer RenderDoc on the windowed 4090 path for “why
-is the frame empty.” Prefer an 8-frame dirty trace + player when filing a
-wgpu issue or when validation only happens on another backend. Never treat
-player FPS as meaningful. `ring_copies` / `particle_fallbacks` stay the
-meters.
+**Fidelity gaps.**
 
-If `trace.ron` is huge, you recorded 300 dirty frames of 128 KiB maps. Cut
-to 8. Zip the folder; that is the artifact, not a RenderDoc `.rdc`.
+- Trace **does** record `Queue::write_buffer` bytes. RenderDoc shows the
+  dest buffer **after** the pending-write flush at submit. Same data,
+  different time.
+- Trace **does not** record which ring index was picked. RenderDoc shows
+  which buffer handle was `COPY_SRC` that submit.
+- Player FPS is meaningless. RenderDoc GPU duration is real but includes
+  validation layers if enabled.
+- Trace + player can reproduce a validation panic on a laptop without a
+  4090. RenderDoc of a 4090 frame will not replay on Intel the same way
+  (tiling, present mode).
+
+**Policy.** Keep both off the default `make ring` path. Do not bump wgpu
+just to get traces.
+
+- Validation / alignment / “share this encode” → 8-frame **trace**,
+  feature-gated (`QGA_WGPU_TRACE=...`, `Trace::Off` otherwise). Not on
+  wgpu 24.
+- Picture / pipeline / barrier / “why empty” → **RenderDoc** on windowed
+  FIFO/mailbox.
+- Counters (`ring_copies`, `particle_fallbacks`, `static_uploads`) stay
+  in-process. Neither tool replaces them.
+
+Do not zip a 300-frame dirty trace (128 KiB × 300 blobs). Cut to 8. Zip
+the folder, not a `.rdc`. Do not expect the player to explain a mailbox
+tear. Do not expect RenderDoc to print `COPY_BYTES_PER_ROW_ALIGNMENT`.
 
 ## Upload contract (from inner_cone)
 

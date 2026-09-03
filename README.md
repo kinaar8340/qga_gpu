@@ -149,9 +149,11 @@ Software fact:
   chain is ContextError → wgpu-core; HAL is Internal/OOM. `layout.rs` keeps
   illegal numbers off the upload path. `particle_fallbacks` is not a
   validation error. No per-frame error scopes; uncaptured validation panics.
-  Do not add wgpu-core just to downcast. wgpu API traces (RON + `player`)
-  are not RenderDoc; wgpu 24 cannot record them (`trace` removed). Prefer
-  RenderDoc on the 4090. Do not enable a trace feature on default.
+  Do not add wgpu-core just to downcast. wgpu trace is a WebGPU API log
+  (RON + `player`); RenderDoc is a Vulkan frame capture — opposite sides
+  of wgpu-hal. wgpu 24 cannot record traces. Validation → trace (when the
+  dep allows); picture/barrier → RenderDoc on windowed 4090; counters
+  stay in-process. Neither on default `make ring`.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
 ## What this crate is not
