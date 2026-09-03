@@ -149,7 +149,9 @@ Software fact:
   chain is ContextError → wgpu-core; HAL is Internal/OOM. `layout.rs` keeps
   illegal numbers off the upload path. `particle_fallbacks` is not a
   validation error. No per-frame error scopes; uncaptured validation panics.
-  Do not add wgpu-core just to downcast.
+  Do not add wgpu-core just to downcast. wgpu API traces (RON + `player`)
+  are not RenderDoc; wgpu 24 cannot record them (`trace` removed). Prefer
+  RenderDoc on the 4090. Do not enable a trace feature on default.
 - Tubes are centerlines + shader extrusion, not CPU ribbons.
 
 ## What this crate is not

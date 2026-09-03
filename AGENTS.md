@@ -16,6 +16,7 @@ This crate owns the frame.
 - No per-frame error scopes. Drop without pop discards. Do not scope write_particles.
 - Do not depend on wgpu-core to downcast TransferError. Grep description. No VkResult under Validation.
 - Debug validation by the Caused by tree + fn_ident, not a numeric code. Cluster: map 8, copy 4, pitch 256, submit-while-mapped. Default panic; do not recover.
+- wgpu API traces are RON+blobs for the in-tree player, not RenderDoc. wgpu 24 cannot record (trace removed, gfx-rs/wgpu#5974). Do not enable on default. RenderDoc on the 4090.
 - Vulkan via wgpu only. No OpenGL. CUDA is out of scope for v0.
 
 ## Target machine
