@@ -636,6 +636,127 @@ wgpu contract, not a 4090 quirk. Do not merge HOST_VISIBLE buffer staging
 the particle field in a texture to dodge alignment — that swaps a solved
 32 B copy for a 256 B pitch path.
 
+### Debugging a native validation panic (Software fact)
+
+Native wgpu validation is a panic with a `Caused by:` tree unless you install
+a handler or a scope. Debug the **description string + API frame**, not a
+numeric code. This crate’s failures cluster on map **8**, copy **4**, texture
+pitch **256**, and submit-while-mapped.
+
+**Make the message complete.** Default panic already prints the tree. Keep
+labels on buffers/textures so `ContextError.label` is not empty:
+`part-stage-0` / `part-stage-1` / `part-stage-2`, `part-gpu`,
+`capture-staging`, `scene-color` / `resolve-color`. `{e:#}` walks `source()`:
+
+```rust
+device.on_uncaptured_error(Box::new(|e| {
+    log::error!("{e:#}");
+    panic!("wgpu uncaptured: {e:#}");
+}));
+```
+
+Do this once at device create, not per frame. A log-only handler **replaces**
+the default panic — do not install that on `make ring`. Env that helps:
+
+- `RUST_BACKTRACE=1` — Rust frame of *your* `copy_*` / `map_async`
+- `WGPU_TRACE=dir` — replay dump (heavy; not for `make ring`)
+- `RUST_LOG=wgpu_core=debug,wgpu_hal=warn` — tracker / map state (`map state -> Waiting`)
+
+The `Unrecognized present mode 1000361000` line is **not** validation. Ignore it.
+
+**Read the tree top-down.**
+
+```text
+wgpu error: Validation Error
+Caused by:
+  In CommandEncoder::copy_texture_to_buffer    ← fn_ident
+    Copy error
+      Bytes per row does not respect `COPY_BYTES_PER_ROW_ALIGNMENT`
+```
+
+| Top frame | Look at |
+|-----------|---------|
+| `Buffer::map_async` / `get_mapped_range` | `need % 8`, cap, already mapped |
+| `Device::create_buffer` | usage combo, `mapped_at_creation` size % 4 |
+| `CommandEncoder::copy_buffer_to_buffer` | offset/size % 4, overrun, same buffer |
+| `copy_texture_to_buffer` / `to_texture` | `bytes_per_row % 256`, buffer len ≥ `bpr × h`, `COPY_SRC` on texture |
+| `Queue::submit` | mapped buffer used in that encoder; destroyed resource |
+| `Device::create_render_pipeline` | shader `StageError` / targets |
+| `Device::create_bind_group` | min binding size vs 256 B UBO |
+
+Inner variant names (`UnalignedBytesPerRow`, `UnalignedOffset`,
+`UsageMismatch`) are the real “codes.”
+
+**Isolate with a scope (debug only).** This crate is wgpu 24 (`push` /
+`pop_error_scope` + `Maintain::Wait`, not the later `!Send` guard):
+
+```rust
+device.push_error_scope(wgpu::ErrorFilter::Validation);
+encoder.copy_texture_to_buffer(/* ... */);
+queue.submit([encoder.finish()]);
+let fut = device.pop_error_scope(); // pop is immediate; future is the result
+device.poll(wgpu::Maintain::Wait);
+if let Some(e) = pollster::block_on(fut) {
+    panic!("capture: {e:#}");
+}
+```
+
+Same thread, pop immediately, `Wait` so the future resolves. Do not wrap
+`write_particles` and treat the error as a `write_buffer` fallback.
+
+**Checklist for this renderer.**
+
+Ring:
+
+- `need = n * 32`; `n == 0` → no map
+- CPU write is `get_mapped_range_mut(0..need)` with `need % 8 == 0`
+- reclaim `map_async(Write, 0..cap)` with `cap % 8 == 0` (128 KiB min, grow ×2)
+- unmap before the encoder copies that slot
+- dest VB: `VERTEX | COPY_DST` only
+- after submit, one pending map per slot (`MapAlreadyPending` = double reclaim)
+
+Capture:
+
+- `bytes_per_row = copy_bytes_per_row_bgra(width)` (800 → 3328)
+- staging size `padded_bpr * height`, not `width * 4 * height` when those differ
+- color target has `COPY_SRC`; copy **after** the render pass ends
+- origin `ZERO`, samples 1, aspect `All` for BGRA
+
+Submit:
+
+- no `get_mapped_range` live on a buffer named in the encoder
+- capture read map happens **after** submit, then `Wait`
+
+If the tree says overrun but pitch is 256-aligned, the **allocation** is
+still dense. Pad the buffer, not just the field.
+
+**Confirm without the GPU.** `layout.rs` already encodes the numbers. To
+assert a *message* you need a device (`push Validation` → encode bad 3200 bpr
+→ finish/submit → pop → `description` contains `UnalignedBytesPerRow`). Do
+not add that to `make ring`. Keep it next to `capture_row_pitch_is_256` if
+you want a runtime twin; tests stay numeric until then.
+
+**What looks like validation but is not.**
+
+| Symptom | Actual |
+|---------|--------|
+| `map_async` callback `Err` | GPU still using slot / aborted |
+| `particle_fallbacks > 0` | no ready slot; legal |
+| Hang on `block_on(pop_error_scope())` | missing `poll(Wait)` |
+| Black capture, no panic | copy never recorded, or Wait packed the wrong rows |
+| Pipeline compile fail at startup | naga / `StageError`, fix WGSL |
+
+**Fast path when it panics on the 4090.**
+
+1. Read `In …::method`.
+2. If transfer: print `width`, `padded_bpr`, `staging.size()`, `need`, `cap`.
+3. If map: print slot index, `ready[]`, pending queue length, mapped flag.
+4. If submit: which buffers are still `get_mapped_range`’d.
+
+Do not turn validation into a recovery path. The debug job is to make
+`layout.rs` and the encoder agree so the uncaptured handler never fires on
+`make ring` or `make ring-windowed`.
+
 ## Upload contract (from inner_cone)
 
 1. Tessellate static topology once (parametric sphere / cone / torus).
