@@ -13,9 +13,9 @@ crates/qga-gpu-demo    1 sphere + 2 cones + separator torus + 4k particles
 ```
 
 Extracted from `qga_engine/crates/qga-gpu` and the inner_cone upload path.
-`inner_cone` and `qga_engine` still path-depend on the engine copy. They will
-switch later; see [MIGRATION.md](MIGRATION.md). This extract does **not** open
-a PR into those repos.
+`inner_cone` @ `03e1fb2` path-depends on this crate (`features = ["capture"]`).
+`qga_engine` depends via git with no `rev`. This extract does **not** open a
+PR into those repos. See [MIGRATION.md](MIGRATION.md).
 
 ## Hardware target (this machine)
 
@@ -51,13 +51,28 @@ Demo window: LMB orbit, wheel zoom, `C` cinematic, `G` glow, Space pause, Esc qu
 
 The default demo has **no path to `qga_engine`**. Optional `--features qga-math`
 on `qga-gpu` adds `From<&qga_math::Fiber>` and needs a local engine checkout.
+Do **not** turn that feature on for `inner_cone`: fiber conversion stays in
+`geometry::gpu_fiber`.
 
-## How consumers will depend on it later
+`make headless` / `make ring` are the sculpture-still-lattice proof
+(`static_uploads == 1`; dirty particles `ring_copies + particle_fallbacks >= frames`).
+`inner_cone` has no headless binary yet, so those counters are not asserted
+on `--export`. `qga-app --headless` does not print `UploadStats` either.
 
-| Consumer | Later dep | Not in this extract |
-|----------|-----------|---------------------|
-| `inner_cone` | `qga-gpu = { path = "../qga_gpu/crates/qga-gpu" }` | do not edit inner_cone here |
-| `qga_engine` | git or path dep; drop in-tree `crates/qga-gpu` | do not PR into qga_engine here |
+## Consumers
+
+Software fact. Local `inner_cone` `03e1fb2` is the contract if GitHub still
+shows `73de02d`.
+
+| Consumer | Dep | Not in this extract |
+|----------|-----|---------------------|
+| `inner_cone` | `qga-gpu = { path = "../qga_gpu/crates/qga-gpu", features = ["capture"] }` | do not edit inner_cone here |
+| `qga_engine` | git, **no `rev`**; `features = ["winit", "headless", "capture", "glow"]` | do not PR into qga_engine here |
+
+`capture` is the right local set for `inner_cone --export`. A `qga_gpu` `main`
+push can change record layout or feature defaults while `inner_cone`’s path
+dep stays frozen to the sibling tree. Pin a sha on the engine git dep before
+treating `qga-app` as a published consumer.
 
 ## Dirty-flag / instance / persistent-particle policy
 

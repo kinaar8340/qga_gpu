@@ -48,7 +48,7 @@ driver 580 has presented empty frames with mailbox. Software fact.
 ## Runtime
 
 ```
-qga-gpu-demo  |  inner_cone / qga-app (later)
+qga-gpu-demo  |  inner_cone  |  qga-app
     │
     └── qga-gpu
             ├── GpuContext  Vulkan device, optional surface, depth
@@ -1152,7 +1152,9 @@ the strategy you want.
 - Claiming the Z-map or 350/π as theorems inside the renderer.
 - Vendoring all of `qga-math`.
 
-Later consumer switch: [MIGRATION.md](MIGRATION.md).
+Consumer wiring: [MIGRATION.md](MIGRATION.md). `inner_cone` @ `03e1fb2`
+path-depends with `features = ["capture"]` only. `qga_engine` git-depends
+with no `rev`. Do not enable `qga-math` on this crate for those callers.
 
 ## Claim labels
 

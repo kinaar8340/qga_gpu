@@ -49,3 +49,10 @@ Dirty particles: ring_copies + particle_fallbacks >= frames; fallbacks allowed.
 ## Features
 default = ["winit"]
 winit, headless, capture, glow, qga-math (optional From; not default)
+
+## Consumers (v0)
+inner_cone @ 03e1fb2: path ../qga_gpu/crates/qga-gpu, features = ["capture"].
+Fiber conversion in geometry::gpu_fiber. Do not enable qga-math on this crate.
+qga_engine: git dep, no rev (floats on main). Features winit/headless/capture/glow.
+inner_cone has no headless binary; make headless / make ring here are the
+static_uploads == 1 and dirty-ring proof.
