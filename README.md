@@ -1,3 +1,5 @@
+![qga-gpu](bg1_qga_gpu.jpg)
+
 # qga-gpu
 
 wgpu/Vulkan renderer. **This crate owns the frame.** Geometry meaning lives in
