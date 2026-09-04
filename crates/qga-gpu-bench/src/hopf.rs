@@ -155,7 +155,7 @@ impl HopfField {
     }
 }
 
-fn hopf_q0(i: u32, n: u32) -> Quat {
+pub(crate) fn hopf_q0(i: u32, n: u32) -> Quat {
     // Hopf coordinates on S³ ≅ unit quaternions. Model, not Theorem.
     // z1 = cos α · e^{i β}, z2 = sin α · e^{i γ}
     // q.w = Re z1, q.x = Im z1, q.y = Re z2, q.z = Im z2
@@ -176,7 +176,7 @@ fn exp_theta_u(theta: f32, u: Vec3) -> Quat {
     Quat::from_xyzw(u.x * s, u.y * s, u.z * s, c)
 }
 
-fn orbit(q0: Quat, theta: f32, u: Vec3, multiply: Multiply) -> Quat {
+pub(crate) fn orbit(q0: Quat, theta: f32, u: Vec3, multiply: Multiply) -> Quat {
     let e = exp_theta_u(theta, u);
     match multiply {
         Multiply::Left => e * q0,
@@ -185,8 +185,12 @@ fn orbit(q0: Quat, theta: f32, u: Vec3, multiply: Multiply) -> Quat {
 }
 
 fn stereo(q: Quat) -> Vec3 {
+    stereo_vis(q, VIS)
+}
+
+pub(crate) fn stereo_vis(q: Quat, vis: f32) -> Vec3 {
     let den = (1.0 + q.w).max(STEREO_FLOOR);
-    Vec3::new(q.x, q.y, q.z) * (VIS / den)
+    Vec3::new(q.x, q.y, q.z) * (vis / den)
 }
 
 /// Nested Hopf shells. Same sample count per tube; world radius grows.
@@ -196,7 +200,7 @@ fn shell_scale(i: u32) -> f32 {
 
 /// Hopf map S³ → S². Model, not Theorem.
 /// z1 = w + i x, z2 = y + i z → (2 z1 conj(z2), |z1|² − |z2|²).
-fn hopf_s2(q: Quat) -> Vec3 {
+pub(crate) fn hopf_s2(q: Quat) -> Vec3 {
     let w = q.w;
     let x = q.x;
     let y = q.y;
@@ -209,7 +213,7 @@ fn hopf_s2(q: Quat) -> Vec3 {
     .normalize_or_zero()
 }
 
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Vec3 {
+pub(crate) fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Vec3 {
     let h = h.rem_euclid(1.0) * 6.0;
     let i = h.floor();
     let f = h - i;
@@ -226,7 +230,7 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Vec3 {
     }
 }
 
-fn fiber_rgb(q: Quat) -> Vec3 {
+pub(crate) fn fiber_rgb(q: Quat) -> Vec3 {
     let n = hopf_s2(q);
     let hue = n.y.atan2(n.x) / TAU;
     let val = 0.58 + 0.22 * n.z.clamp(-1.0, 1.0);

@@ -61,6 +61,9 @@ pub struct UploadStats {
     /// Times static fiber GPU buffers were actually written.
     pub static_uploads: u64,
     pub static_skipped: u64,
+    /// Times live harmonic GPU buffers were actually written.
+    /// Distinct from `ring_copies` (particles) and `static_uploads`.
+    pub live_fiber_writes: u64,
     pub live_skipped: u64,
     pub particle_skipped: u64,
 }
@@ -765,6 +768,8 @@ impl Renderer {
         slot.radius = radius;
         if is_static {
             self.stats.static_uploads += 1;
+        } else {
+            self.stats.live_fiber_writes += 1;
         }
     }
 

@@ -58,6 +58,7 @@
     "ring_copies": { "type": "integer" },
     "static_uploads": { "type": "integer" },
     "static_skipped": { "type": "integer" },
+    "live_fiber_writes": { "type": "integer" },
     "live_skipped": { "type": "integer" },
     "particle_skipped": { "type": "integer" },
     "particle_grows": { "type": "integer" },

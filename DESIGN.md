@@ -17,14 +17,14 @@ qga_gpu/
 │   ├── src/{context,camera,renderer,types,mesh,hud,profile}.rs
 │   └── src/shaders/{fiber,particle,hub,face,line,hud,blit,post}.wgsl
 ├── crates/qga-gpu-demo/            # 4k sculpture smoke
-└── crates/qga-gpu-bench/           # public 65k ocean + Hopf sculpture bench
+└── crates/qga-gpu-bench/           # public 65k ocean + Hopf / loom / hold bench
 ```
 
 | Crate | Role |
 |-------|------|
 | `qga-gpu` | Vulkan device, pipelines, resident buffers, upload API |
 | `qga-gpu-demo` | 1 sphere, 2 cones, separator torus, 4k particles (`make demo-tiny`) |
-| `qga-gpu-bench` | Public demo: 65k particle ocean (`make demo`). Hopf bench is `--scene hopf`. Geometry is glam **Model**. |
+| `qga-gpu-bench` | Public demo: 65k particle ocean (`make demo`). Hopf bench is `--scene hopf`. `hold` is the two-clock skip (`make bench-hold`). `loom` is inverse Hopf from a Cartesian chart, latitudes → nested tori (`make bench-loom`). Geometry is glam **Model**. |
 
 WGSL lives in-tree under `crates/qga-gpu/src/shaders/`. No runtime Python.
 
@@ -75,7 +75,7 @@ records are 32 bytes.
 | Buffer | Lifetime | CPU write |
 |--------|----------|-----------|
 | Static fibers (centerline storage) | Resident. Hash(kind, points, tube_radius). | `retain_static_fibers` / torus in `retain_meshes`. No-op if hash matches. Counted in `static_uploads`. |
-| Live fibers | Resident, grow ×2. | `write_live_fibers` only if hash or radius changed. |
+| Live fibers | Resident, grow ×2. | `write_live_fibers` only if hash or radius changed. Counted in `live_fiber_writes`. |
 | Faces / lines / hubs / HUD | Resident, grow ×2. | On retain / explicit upload. |
 | Geodesic orb mesh | Tessellated once in `Renderer::new`. | Instances via `draw_geodesic_orb`. |
 | Particles | Persistent GPU VB + 3×128 KiB `MAP_WRITE` ring (grow ×2). | Skip if bytes unchanged (`particle_skipped`). Any ready slot; `write_buffer` only if none ready (`particle_fallbacks`). Never drop `pending`. Grows counted in `particle_grows`, not `fiber_reallocs`. |

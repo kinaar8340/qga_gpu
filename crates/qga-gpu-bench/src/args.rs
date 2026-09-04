@@ -46,6 +46,10 @@ pub enum Scene {
     Hopf,
     /// ngsm lattice. Alias `--scene ngsm`.
     Gradient,
+    /// Static lattice holds; uniforms breathe; live + motes pulse every 30.
+    Hold,
+    /// Shared Hopf frame + stacked phase-color braid (photonic fabric loom).
+    Loom,
 }
 
 impl Scene {
@@ -53,6 +57,8 @@ impl Scene {
         match self {
             Self::Hopf => "hopf",
             Self::Gradient => "gradient",
+            Self::Hold => "hold",
+            Self::Loom => "loom",
         }
     }
 
@@ -60,6 +66,8 @@ impl Scene {
         match s {
             "hopf" | "sculpture" => Some(Self::Hopf),
             "gradient" | "ngsm" => Some(Self::Gradient),
+            "hold" => Some(Self::Hold),
+            "loom" | "braid" | "fabric" => Some(Self::Loom),
             _ => None,
         }
     }
@@ -118,6 +126,35 @@ pub struct Args {
     pub dirty_rings: bool,
     /// Speakers (orbs+rings) + glass fabric + rainbow particle bed.
     pub fluid: bool,
+    /// Loom base-space flux. Elliptic = nested tori. Hyperbolic = gated braid.
+    pub flux: Flux,
+    /// Loom phase coupling in [0, 1]. High locks ψ, low lets the weave wander.
+    pub lambda: f32,
+    /// Loom mosaic tiles on a side (1 = one chart). `--mosaic 2` / `2x2`.
+    pub mosaic: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flux {
+    Elliptic,
+    Hyperbolic,
+}
+
+impl Flux {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Elliptic => "elliptic",
+            Self::Hyperbolic => "hyperbolic",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "elliptic" | "closed" => Some(Self::Elliptic),
+            "hyperbolic" | "river" | "gated" => Some(Self::Hyperbolic),
+            _ => None,
+        }
+    }
 }
 
 struct Seed {
@@ -195,12 +232,22 @@ pub fn usage() -> &'static str {
   Hopf fibers are glam unit-quaternion orbits (Model). No qga-math.
   --scene gradient is a Model inspired by Toshiyuki Nagashima (@ngsm)
   'gradient / structure' — not a port of the p5.js sketch.
+  --scene hold is a Model of a frozen lattice: static topology once,
+  uniforms every frame, live harmonics + motes on a 30-frame pulse.
+  --scene loom is a Model of inverse Hopf from a Cartesian Γ-chart:
+  N×N warp/weft (static), cells near three S² latitudes (live tubes),
+  particle fill. Alias braid|fabric. Not a fabricated silica loom.
 
   Public demo (make demo): --scene gradient --preset 4090 --grid 64 --fluid
   until Esc. 4096 speakers + 65536 motes. Prints UploadStats on exit.
+  Two-clock skip proof (make bench-hold): --scene hold --preset 4090
+  --frames 300 --headless --no-capture.
+  Hold encode (make bench-hold-record): --grid 64 1440p, in-sheet, no HUD
+  (capture Wait; not a skip proof).
+  Loom smoke (make bench-loom-smoke): --scene loom --preset smoke.
 
 Mode
-  --scene hopf|sculpture|gradient|ngsm   default hopf (CLI; make demo is gradient)
+  --scene hopf|sculpture|gradient|ngsm|hold|loom|braid|fabric   default hopf (CLI; make demo is gradient)
   --headless                 init_headless (frames default from preset)
   --frames N                 exit after N presents (0 = unlimited windowed)
   --width N  --height N      swapchain / offscreen size
@@ -208,7 +255,7 @@ Mode
 
 Scene scale (preset first, then overrides)
   --preset smoke|ring-qga|4090|soak   default 4090
-  --fibers N                 live centerlines (cap 16384)  [hopf]
+  --fibers N                 live centerlines (cap 16384)  [hopf; hold 8–16; loom unused]
   --fiber-samples N          points / fiber (cap 256)
   --particles N              GpuParticle 32 B (cap 8388608)
   --orbs N                   draw_geodesic_orb instances (cap 65536)
@@ -224,14 +271,20 @@ Gradient only
   --dirty-rings              tumble ring quaternions every frame
   --fluid                    speakers (orbs+rings) + glass fabric + particle bed
 
+Loom sculpt (Model; not inner_cone mosaic / hull)
+  --flux elliptic|hyperbolic  nested tori (default) or gated river-braid
+  --lambda F                  phase lock 0…1 (default 0.15)
+  --mosaic 1|2|2x2            independent chart tiles (default 1)
+
 Dirty / present
   --dirty-particles          advance mote phase every frame (no hash skip)
-  --dirty-fibers             rotate Hopf generator u each frame
+  --dirty-fibers             rotate Hopf generator / loom chart phase each frame
   --clean                    still lattice (clears preset dirty flags)
   --glow / --no-glow         VisualState.glow on / off
   --capture-first-last       capture frames 0 and N-1 only
   --no-capture               no readback
-  --record PATH.mp4          headless, every frame → ffmpeg (not a ring proof)
+  --record PATH.mp4          headless, every frame → ffmpeg (not a ring proof).
+                             Loom orbits (nested tori); hopf records crane.
   --json PATH                BenchRecord (default $OUT/<preset>-<frames>.json)
 
 Hopf presets
@@ -245,6 +298,18 @@ Gradient presets (same frames/size; grid is the scale)
   ring-qga  grid=16   1280x720   dirty-rings on
   4090      grid=32   1920x1080  dirty-rings on, glow
   soak      grid=48   2560x1440  dirty-rings on, glow
+
+Hold (grid from preset; live tubes 12; 16k motes; dirty flags off)
+  4090      grid=32   1920x1080  glow, pulse every 30 frames
+
+Loom (--grid = N×N Cartesian cells; live = latitude stitches, not N²)
+  smoke     grid=16  elliptic  λ=0.15  mosaic=1   4096 motes   1280x720
+  ring-qga  grid=16  elliptic  λ=0.15  mosaic=1  16384 motes   1280x720
+  4090      grid=16  elliptic  λ=0.15  mosaic=1  32768 motes   1920x1080, glow
+  soak      grid=32  elliptic  λ=0.15  mosaic=1  65536 motes   2560x1440, glow
+  Enable cells near θ=π/4, π/2, 3π/4; inverse-Hopf each to a tube.
+  Cartesian warp/weft is the faint static frame. --dirty-fibers grows
+  outer needles first, then the trunk, and rotates φ on the chart.
 
 Default with no flags: windowed --preset 4090 until Esc.
 Unknown flags are an error (exit 2).
@@ -310,6 +375,9 @@ where
     let mut ring_tube: Option<f32> = None;
     let mut dirty_rings_flag = false;
     let mut fluid = false;
+    let mut flux = Flux::Elliptic;
+    let mut lambda: Option<f32> = None;
+    let mut mosaic: Option<u32> = None;
 
     let mut it = argv.into_iter().map(|s| s.as_ref().to_string());
     while let Some(a) = it.next() {
@@ -396,7 +464,7 @@ where
                     return Err(2);
                 };
                 scene = Scene::parse(&v).ok_or_else(|| {
-                    eprintln!("unknown scene {v} (hopf|sculpture|gradient|ngsm)");
+                    eprintln!("unknown scene {v} (hopf|sculpture|gradient|ngsm|hold|loom|braid|fabric)");
                     2
                 })?;
             }
@@ -405,6 +473,24 @@ where
             "--orb-scale" => orb_scale = Some(take_f32("--orb-scale", &mut it)?),
             "--ring-radius" => ring_radius = Some(take_f32("--ring-radius", &mut it)?),
             "--ring-tube" => ring_tube = Some(take_f32("--ring-tube", &mut it)?),
+            "--lambda" => lambda = Some(take_f32("--lambda", &mut it)?),
+            "--mosaic" => {
+                let Some(v) = it.next() else {
+                    eprintln!("missing value for --mosaic");
+                    return Err(2);
+                };
+                mosaic = Some(parse_mosaic(&v)?);
+            }
+            "--flux" => {
+                let Some(v) = it.next() else {
+                    eprintln!("missing value for --flux");
+                    return Err(2);
+                };
+                flux = Flux::parse(&v).ok_or_else(|| {
+                    eprintln!("unknown --flux {v} (elliptic|hyperbolic)");
+                    2
+                })?;
+            }
             other => {
                 eprintln!("unknown flag {other}");
                 eprintln!("try --help");
@@ -420,19 +506,23 @@ where
         Preset::FourK90 => (32, 64, true, true),
         Preset::Soak => (48, 64, true, true),
     };
-    let grid = grid.unwrap_or(g_grid);
+    let grid_opt = grid;
+    let mut grid = grid.unwrap_or(g_grid);
     let cell_extent = cell_extent.unwrap_or(0.22);
     let orb_scale = orb_scale.unwrap_or(0.055);
     let ring_radius = ring_radius.unwrap_or(0.09);
     let ring_tube = ring_tube.unwrap_or(0.004);
 
+    let fibers_opt = fibers;
     let mut fibers = fibers.unwrap_or(seed.fibers);
     let mut fiber_samples = fiber_samples.unwrap_or(seed.samples);
     let particles_opt = particles;
     let mut particles = particles.unwrap_or(seed.particles);
+    let orbs_opt = orbs;
     let mut orbs = orbs.unwrap_or(seed.orbs);
     let width = width.unwrap_or(seed.width).max(1);
     let height = height.unwrap_or(seed.height).max(1);
+    let tube_radius_opt = tube_radius;
     let mut tube_radius =
         tube_radius.unwrap_or_else(|| (0.90 / (fibers as f32).sqrt()).clamp(0.008, 0.05));
     let mut dirty_particles = seed.dirty_particles;
@@ -457,6 +547,45 @@ where
         particles = 0;
     }
 
+    if scene == Scene::Hold {
+        fiber_samples = if fiber_samples == seed.samples {
+            g_samples
+        } else {
+            fiber_samples
+        };
+        fibers = fibers_opt.unwrap_or(12).clamp(8, 16);
+        orbs = 0;
+        dirty_particles = false;
+        dirty_fibers = false;
+        dirty_rings = false;
+        glow = glow_flag.unwrap_or(g_glow);
+        tube_radius = tube_radius_opt.unwrap_or(0.012);
+        particles = particles_opt.unwrap_or(16_384);
+    }
+
+    if scene == Scene::Loom {
+        let (n_grid, n_motes, tube) = match preset {
+            Preset::Smoke => (16, 4_096, 0.016),
+            Preset::RingQga => (16, 16_384, 0.014),
+            Preset::FourK90 => (16, 32_768, 0.014),
+            Preset::Soak => (32, 65_536, 0.012),
+        };
+        fiber_samples = if fiber_samples == seed.samples {
+            g_samples
+        } else {
+            fiber_samples
+        };
+        grid = grid_opt.unwrap_or(n_grid);
+        fibers = fibers_opt.unwrap_or(grid);
+        orbs = orbs_opt.unwrap_or(grid.saturating_mul(grid).min(ORB_CAP));
+        dirty_rings = false;
+        glow = glow_flag.unwrap_or(g_glow);
+        tube_radius = tube_radius_opt.unwrap_or(tube);
+        particles = particles_opt.unwrap_or(n_motes);
+        dirty_particles = seed.dirty_particles;
+        dirty_fibers = seed.dirty_fibers;
+    }
+
     if clean {
         dirty_particles = false;
         dirty_fibers = false;
@@ -473,16 +602,18 @@ where
     }
     if fluid {
         dirty_particles = true;
-        dirty_rings = true;
-        let side = (grid.saturating_mul(8)).clamp(32, 256);
-        particles = particles_opt.unwrap_or(side.saturating_mul(side));
+        if scene != Scene::Loom {
+            dirty_rings = true;
+            let side = (grid.saturating_mul(8)).clamp(32, 256);
+            particles = particles_opt.unwrap_or(side.saturating_mul(side));
+        }
     } else if scene == Scene::Gradient && dirty_particles && particles == 0 {
         particles = 4 * grid.saturating_mul(grid);
     }
 
-    // Hopf record uses a yaw crane. Gradient waves are the motion; keep the
-    // camera locked so the silhouette stays edge-on.
-    let cinematic = record.is_some() && scene == Scene::Hopf;
+    // Loom orbits so the nested tori read as a 3D object. Hopf records crane.
+    // Gradient stays locked (sheet silhouette).
+    let cinematic = scene == Scene::Loom || (record.is_some() && scene == Scene::Hopf);
     if record.is_some() {
         headless = true;
         if no_capture {
@@ -507,18 +638,29 @@ where
         Capture::None
     };
 
-    if scene == Scene::Gradient && grid > GRID_CAP {
+    if matches!(scene, Scene::Gradient | Scene::Hold) && grid > GRID_CAP {
         eprintln!("grid {grid} exceeds cap {GRID_CAP}");
+        return Err(2);
+    }
+    if scene == Scene::Loom && (grid > GRID_CAP || grid < 2) {
+        eprintln!("loom grid {grid} out of range 2…{GRID_CAP}");
+        return Err(2);
+    }
+    let mosaic = mosaic.unwrap_or(1).clamp(1, 4);
+    let lambda = lambda.unwrap_or(0.15).clamp(0.0, 1.0);
+    let live_fibers = if scene == Scene::Loom {
+        grid.saturating_mul(grid).saturating_mul(mosaic.saturating_mul(mosaic))
+    } else {
+        fibers
+    };
+    if live_fibers > FIBER_CAP {
+        eprintln!("live fibers {live_fibers} exceeds cap {FIBER_CAP} (warp×layers for loom)");
         return Err(2);
     }
     if particles > PARTICLE_CAP {
         eprintln!(
             "particles {particles} exceeds cap {PARTICLE_CAP} (~256 MiB VB at 32 B/record); refusing before wgpu OOM"
         );
-        return Err(2);
-    }
-    if fibers > FIBER_CAP {
-        eprintln!("fibers {fibers} exceeds cap {FIBER_CAP}");
         return Err(2);
     }
     if fiber_samples > SAMPLE_CAP || fiber_samples < 2 {
@@ -535,7 +677,7 @@ where
     }
 
     let staging = RECORD
-        * (u64::from(particles) + u64::from(fibers) * u64::from(fiber_samples) + u64::from(orbs));
+        * (u64::from(particles) + u64::from(live_fibers) * u64::from(fiber_samples) + u64::from(orbs));
     if staging > STAGING_BUDGET {
         eprintln!(
             "CPU staging budget {staging} B exceeds 1 GiB (32 × (particles + fibers × samples + orbs)); refusing before wgpu OOM"
@@ -544,7 +686,7 @@ where
     }
 
     let json = json.unwrap_or_else(|| {
-        let name = if scene == Scene::Gradient {
+        let name = if matches!(scene, Scene::Gradient | Scene::Hold | Scene::Loom) {
             format!("{}-{}-{}.json", scene.as_str(), preset.as_str(), n_frames)
         } else {
             format!("{}-{}.json", preset.as_str(), n_frames)
@@ -580,7 +722,23 @@ where
         ring_tube,
         dirty_rings,
         fluid,
+        flux,
+        lambda,
+        mosaic,
     })
+}
+
+fn parse_mosaic(s: &str) -> Result<u32, i32> {
+    match s {
+        "1" | "1x1" => Ok(1),
+        "2" | "2x2" => Ok(2),
+        "3" | "3x3" => Ok(3),
+        "4" | "4x4" => Ok(4),
+        _ => {
+            eprintln!("--mosaic wants 1|2|2x2|3|4, got {s}");
+            Err(2)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -714,5 +872,204 @@ mod tests {
         assert_eq!(a.orbs, 100);
         assert!(!a.dirty_rings);
         assert_eq!(a.fiber_samples, 48);
+    }
+
+    #[test]
+    fn hold_4090_is_two_clock() {
+        let a = parse_from([
+            "--headless",
+            "--scene",
+            "hold",
+            "--preset",
+            "4090",
+            "--frames",
+            "300",
+            "--no-capture",
+        ])
+        .unwrap();
+        assert_eq!(a.scene, Scene::Hold);
+        assert_eq!(a.grid, 32);
+        assert_eq!(a.fibers, 12);
+        assert_eq!(a.fiber_samples, 64);
+        assert_eq!(a.particles, 16_384);
+        assert_eq!(a.orbs, 0);
+        assert_eq!(a.frames, 300);
+        assert!(!a.dirty_particles && !a.dirty_fibers && !a.dirty_rings);
+        assert!(a.glow);
+        assert_eq!(a.capture, Capture::None);
+        assert!((a.tube_radius - 0.012).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hold_fiber_override_stays_in_live_slot() {
+        let a = parse_from(["--scene", "hold", "--fibers", "8", "--particles", "256"]).unwrap();
+        assert_eq!(a.fibers, 8);
+        assert_eq!(a.particles, 256);
+        assert_eq!(a.orbs, 0);
+    }
+
+    #[test]
+    fn hold_record_matches_makefile_scheme() {
+        let a = parse_from([
+            "--scene",
+            "hold",
+            "--preset",
+            "4090",
+            "--grid",
+            "64",
+            "--width",
+            "2560",
+            "--height",
+            "1440",
+            "--frames",
+            "600",
+            "--record",
+            "benchmarks/results/qga-gpu-bench-hold-64.mp4",
+        ])
+        .unwrap();
+        assert_eq!(a.scene, Scene::Hold);
+        assert!(a.headless);
+        assert!(!a.cinematic);
+        assert_eq!(a.capture, Capture::All);
+        assert_eq!(a.grid, 64);
+        assert_eq!(a.fibers, 12);
+        assert_eq!(a.particles, 16_384);
+        assert_eq!(a.frames, 600);
+        assert_eq!(a.width, 2560);
+        assert_eq!(a.height, 1440);
+        assert_eq!(
+            a.record.as_deref(),
+            Some(std::path::Path::new(
+                "benchmarks/results/qga-gpu-bench-hold-64.mp4"
+            ))
+        );
+    }
+
+    #[test]
+    fn loom_4090_is_elliptic_16() {
+        let a = parse_from(["--headless", "--scene", "loom", "--preset", "4090"]).unwrap();
+        assert_eq!(a.scene, Scene::Loom);
+        assert_eq!(a.grid, 16);
+        assert_eq!(a.fibers, 16);
+        assert_eq!(a.orbs, 256);
+        assert_eq!(a.fiber_samples, 64);
+        assert_eq!(a.particles, 32_768);
+        assert_eq!(a.flux, Flux::Elliptic);
+        assert!((a.lambda - 0.15).abs() < 1e-6);
+        assert_eq!(a.mosaic, 1);
+        assert!(a.dirty_particles && a.dirty_fibers);
+        assert!(a.cinematic);
+        assert!(a.glow);
+        assert_eq!(a.frames, 600);
+        assert_eq!(a.width, 1920);
+        assert_eq!(a.height, 1080);
+    }
+
+    #[test]
+    fn loom_aliases_and_overrides() {
+        let a = parse_from([
+            "--scene",
+            "braid",
+            "--preset",
+            "smoke",
+            "--fibers",
+            "8",
+            "--grid",
+            "3",
+            "--particles",
+            "64",
+        ])
+        .unwrap();
+        assert_eq!(a.scene, Scene::Loom);
+        assert_eq!(a.fibers, 8);
+        assert_eq!(a.grid, 3);
+        assert_eq!(a.particles, 64);
+        assert_eq!(a.orbs, 9);
+        assert!(!a.dirty_fibers);
+        assert!(a.dirty_particles);
+        assert_eq!(a.flux, Flux::Elliptic);
+    }
+
+    #[test]
+    fn fabric_alias_is_loom() {
+        let a = parse_from(["--scene", "fabric", "--preset", "smoke"]).unwrap();
+        assert_eq!(a.scene, Scene::Loom);
+        assert_eq!(a.fibers, 16);
+        assert_eq!(a.grid, 16);
+        assert_eq!(a.particles, 4_096);
+    }
+
+    #[test]
+    fn loom_rejects_too_many_live_tubes() {
+        assert_eq!(
+            parse_from(["--scene", "loom", "--grid", "96", "--mosaic", "2"]).unwrap_err(),
+            2
+        );
+    }
+
+    #[test]
+    fn loom_record_orbits() {
+        let a = parse_from([
+            "--scene",
+            "loom",
+            "--preset",
+            "smoke",
+            "--record",
+            "out.mp4",
+        ])
+        .unwrap();
+        assert!(a.headless);
+        assert!(a.cinematic);
+        assert_eq!(a.capture, Capture::All);
+    }
+
+    #[test]
+    fn loom_flux_lambda_mosaic() {
+        let a = parse_from([
+            "--scene",
+            "loom",
+            "--flux",
+            "hyperbolic",
+            "--lambda",
+            "0.8",
+            "--mosaic",
+            "2x2",
+        ])
+        .unwrap();
+        assert_eq!(a.flux, Flux::Hyperbolic);
+        assert!((a.lambda - 0.8).abs() < 1e-6);
+        assert_eq!(a.mosaic, 2);
+    }
+
+    #[test]
+    fn loom_windowed_record_flags() {
+        let a = parse_from([
+            "--scene",
+            "loom",
+            "--preset",
+            "4090",
+            "--dirty-particles",
+            "--dirty-fibers",
+            "--frames",
+            "900",
+            "--record",
+            "benchmarks/results/qga-gpu-bench-loom-4090.mp4",
+        ])
+        .unwrap();
+        assert_eq!(a.scene, Scene::Loom);
+        assert!(a.headless);
+        assert_eq!(a.frames, 900);
+        assert_eq!(a.width, 1920);
+        assert_eq!(a.height, 1080);
+        assert_eq!(a.fibers, 16);
+        assert_eq!(a.grid, 16);
+        assert!(a.cinematic);
+        assert!(a.dirty_particles && a.dirty_fibers);
+        assert_eq!(
+            a.record.as_deref(),
+            Some(std::path::Path::new(
+                "benchmarks/results/qga-gpu-bench-loom-4090.mp4"
+            ))
+        );
     }
 }

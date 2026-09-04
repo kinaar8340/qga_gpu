@@ -36,7 +36,9 @@ struct VsOut {
 
 @vertex
 fn vs_main(vin: VsIn) -> VsOut {
-    let world = vin.pos * vin.inst_scale + vin.inst_offset;
+    var p = vin.pos;
+    p.y *= frame.height_scale;
+    let world = p * vin.inst_scale + vin.inst_offset;
     var out: VsOut;
     out.clip = frame.view_proj * vec4<f32>(world, 1.0);
     out.color = vin.color * vin.inst_color;
@@ -51,6 +53,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(in.nrm);
     let light = normalize(vec3<f32>(0.28, 0.82, 0.48));
     let wrap = abs(dot(n, light)) * 0.35 + 0.65;
-    let col = in.color * wrap;
-    return vec4<f32>(col, in.alpha);
+    // zener/2.4 == 1 at VisualState default: identity mix.
+    let z = frame.zener / 2.4;
+    let glass = mix(in.color, vec3<f32>(0.70, 0.86, 1.0), clamp((z - 1.0) * 0.25, 0.0, 0.35));
+    let col = glass * wrap;
+    let a = in.alpha * clamp(frame.aperture, 0.25, 1.6);
+    return vec4<f32>(col, a);
 }

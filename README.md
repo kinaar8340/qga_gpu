@@ -85,7 +85,7 @@ is sized for this box (`--grid 64 --fluid` → 4096 speakers + 65 536 motes).
 ```
 crates/qga-gpu         library (WGSL in crates/qga-gpu/src/shaders/)
 crates/qga-gpu-demo    4k sculpture smoke (`make demo-tiny`)
-crates/qga-gpu-bench   public 65k ocean + Hopf sculpture bench
+crates/qga-gpu-bench   public 65k ocean + Hopf / hold / loom bench
 ```
 
 Extracted from `qga_engine/crates/qga-gpu` and the inner_cone upload path.
@@ -106,6 +106,11 @@ make bench-smoke             # tiny Hopf scene, no capture
 make bench-gradient          # --scene gradient --preset 4090, 32×32 lattice
 make bench-gradient-windowed # speakers + glass + 65k bed, then exit
 make bench-gradient-record   # same look, encode mp4 via --record
+make bench-hold              # two-clock skip: static once, pulse every 30
+make bench-hold-record       # hold, in-sheet 1440p encode (no HUD)
+make bench-loom-smoke        # inverse-Hopf loom, 60 frames, no capture
+make bench-loom              # 4090 loom, 60 headless frames, no capture
+make bench-loom-windowed     # 4090 loom, 900 frames, cinematic --record
 ```
 
 `--frames N` exits after N presents (windowed or headless). `--frames 0` is
@@ -123,6 +128,8 @@ Scenes:
 |-----------|-------------|------------|
 | `hopf` / `sculpture` | yes | Hopf field + observer sculpture |
 | `gradient` / `ngsm` | `make demo` | Lattice of instanced orbs + one thin ring per cell. **Model**: ngsm “gradient / structure”; rainbow ocean and ring tilts from a Stokes-skyrmion-like field (Chen et al. 2026; Kinder arXiv:2607.16520). Not a p5.js port and not those papers’ data. `--fluid` adds the 65 536-particle bed. |
+| `hold` | `make bench-hold` | Frozen fiber lattice + two cones + separator torus. **Model**. Static topology once; 8–16 live tubes and 16k motes pulse every 30 frames; `aperture` / `height_scale` / `zener` / `time` breathe the rest. Camera sits in the sheet (not a bird’s-eye). `make bench-hold-record` is grid 64, 1440p, no HUD. Shows the hash-skip path the 65k ocean never prints. |
+| `loom` / `braid` / `fabric` | `make bench-loom` | Cartesian N×N warp/weft (static) + cells on three S² latitudes inverse-Hopf to nested tori (live) + particle fill. **Model**: sculpt the chart by which cells are on and (θ,φ,ψ); do not upload 2D squiggles. `--flux elliptic` (default), `--lambda`, `--mosaic`. `--dirty-fibers` grows needles first. Not a fabricated silica loom. |
 
 `make demo` is the public 65k scene. `make ring` is the 4k dirty-particle
 smoke. Hopf bench is a different scale: observer sphere + cyan/orange cones +
@@ -137,6 +144,11 @@ make bench-smoke              # 256 fibers / 4k motes / 60 frames, no capture
 make bench-gradient           # 32×32 lattice, dirty rings
 make bench-gradient-windowed  # --fluid 65k bed
 make bench-gradient-record    # --grid 64 --fluid → mp4 (capture Wait; not a ring proof)
+make bench-hold               # headless 300, --no-capture; static once, pulse skip
+make bench-hold-record        # --grid 64 1440p in-sheet → mp4 (capture Wait; not a skip proof)
+make bench-loom-smoke         # warp=16 elliptic, 60 frames, no capture
+make bench-loom               # 4090 loom, 60 headless, no capture
+make bench-loom-windowed      # 4090, 900 frames, cinematic --record
 ./benchmarks/run.sh           # smoke then hopf 4090 --no-capture; JSON under benchmarks/results/
 ```
 
@@ -149,6 +161,12 @@ Acceptance (headless): `static_uploads == 1`; dirty particles
 dirty fibers/rings do not no-op every frame; `particle_grows == 0` after
 warmup on `4090` / `ring-qga`. Fallbacks counted, not fatal. Do not add a 4th
 ring slot unless windowed fallbacks exceed ~1%.
+
+`make bench-hold` is the skip-path proof the ocean never prints. This 4090
+(300 headless, `--no-capture`): `static_uploads=1`, `live_fiber_writes=10`,
+`particle_skipped=291`, `ring_copies=10`, `particle_fallbacks=0`.
+`make bench-hold-record` is the same look, in-sheet, 1440p, HUD off
+(capture Wait; not a skip proof).
 
 ## Consumers
 
@@ -229,9 +247,12 @@ copies per present.
 Frame loop is one encoder + one `submit` (pending-writes then the pass).
 Empty `submit([])` is for asset load, not the present loop.
 
-**Live vs static fibers.** Static separator / torus: `retain_static_fibers`.
-Live harmonics: `write_live_fibers` (same hash+radius no-op). Tubes are
-centerlines + shader extrusion, not CPU ribbons.
+**Live vs static fibers.** Static separator / torus / held lattice:
+`retain_static_fibers`. Live harmonics: `write_live_fibers` (same hash+radius
+no-op). `UploadStats.live_fiber_writes` counts real live GPU writes, apart
+from `ring_copies` and `static_uploads`. Tubes are centerlines + shader
+extrusion, not CPU ribbons. `make bench-hold` is the split: static once,
+live hash changes every 30 frames.
 
 ## Public surface (v0)
 

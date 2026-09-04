@@ -6,6 +6,8 @@ mod hopf;
 mod record;
 mod scene;
 mod scene_gradient;
+mod scene_hold;
+mod scene_loom;
 mod stats;
 
 use anyhow::{Context, Result};
@@ -14,6 +16,8 @@ use glam::{Mat4, Vec3};
 use hopf::HopfField;
 use qga_gpu::{Camera, GpuContext, GpuFiber, GpuParticle, Renderer, UploadStats, VisualState};
 use scene_gradient::GradientLattice;
+use scene_hold::HoldLattice;
+use scene_loom::LoomBraid;
 use stats::FrameTimer;
 use std::sync::Arc;
 use std::time::Instant;
@@ -47,6 +51,8 @@ fn run(args: Args) -> Result<()> {
 enum LiveScene {
     Hopf(HopfField),
     Gradient(GradientLattice),
+    Hold(HoldLattice),
+    Loom(LoomBraid),
 }
 
 fn vis_from(args: &Args) -> VisualState {
@@ -62,6 +68,8 @@ fn camera_from(args: &Args) -> Camera {
     let dist = match args.scene {
         Scene::Hopf => 48.0,
         Scene::Gradient => scene_gradient::camera_distance(args),
+        Scene::Hold => scene_hold::camera_distance(args),
+        Scene::Loom => scene_loom::camera_distance(args),
     };
     let mut cam = Camera::orbit(Vec3::ZERO, dist);
     match args.scene {
@@ -79,6 +87,16 @@ fn camera_from(args: &Args) -> Camera {
                 cam.pitch = 0.62;
             }
         }
+        Scene::Hold => {
+            cam.yaw = 0.28;
+            cam.pitch = 0.22;
+            cam.near = 0.02;
+        }
+        Scene::Loom => {
+            cam.yaw = 0.48;
+            cam.pitch = 0.36;
+            cam.near = 0.05;
+        }
     }
     cam.aspect = args.width as f32 / args.height.max(1) as f32;
     cam.cinematic = args.cinematic;
@@ -95,6 +113,8 @@ fn live_from(args: &Args) -> LiveScene {
             args.multiply,
         )),
         Scene::Gradient => LiveScene::Gradient(GradientLattice::new(args)),
+        Scene::Hold => LiveScene::Hold(HoldLattice::new(args)),
+        Scene::Loom => LiveScene::Loom(LoomBraid::new(args)),
     }
 }
 
@@ -120,6 +140,17 @@ fn queue_orbs_gradient(renderer: &mut Renderer, lat: &GradientLattice) {
     }
 }
 
+fn queue_orbs_loom(renderer: &mut Renderer, loom: &LoomBraid) {
+    let scale = loom.orb_scale();
+    for (pos, color) in loom.orb_centers() {
+        renderer.draw_geodesic_orb(
+            Mat4::from_translation(pos) * Mat4::from_scale(Vec3::splat(scale)),
+            color,
+            1,
+        );
+    }
+}
+
 fn tick_live(args: &Args, live: &mut LiveScene, frame: u32) {
     match live {
         LiveScene::Hopf(hopf) => {
@@ -136,6 +167,19 @@ fn tick_live(args: &Args, live: &mut LiveScene, frame: u32) {
             }
             if args.dirty_particles {
                 lat.advance_motes(0.008);
+            }
+        }
+        LiveScene::Hold(lat) => {
+            if HoldLattice::is_pulse(frame) {
+                lat.pulse_correction();
+            }
+        }
+        LiveScene::Loom(loom) => {
+            if args.dirty_fibers {
+                loom.tick_braid(frame);
+            }
+            if args.dirty_particles {
+                loom.advance_motes(0.008);
             }
         }
     }
@@ -164,6 +208,20 @@ fn upload_live(
                 renderer.write_particles(gpu, &lat.particles)?;
             }
             queue_orbs_gradient(renderer, lat);
+        }
+        LiveScene::Hold(lat) => {
+            renderer.retain_meshes(gpu, &scene_hold::meshes(), 1)?;
+            renderer.retain_static_fibers(gpu, &lat.static_fibers, 0.0)?;
+            renderer.write_live_fibers(gpu, &lat.live, 0.0)?;
+            renderer.write_particles(gpu, &lat.particles)?;
+        }
+        LiveScene::Loom(loom) => {
+            renderer.retain_static_fibers(gpu, &loom.static_fibers, args.tube_radius * 0.42)?;
+            renderer.write_live_fibers(gpu, &loom.live, args.tube_radius)?;
+            if args.dirty_particles {
+                renderer.write_particles(gpu, &loom.particles)?;
+            }
+            queue_orbs_loom(renderer, loom);
         }
     }
     Ok(())
@@ -198,6 +256,28 @@ fn warmup(gpu: &GpuContext, renderer: &mut Renderer, args: &Args, live: &LiveSce
             }
             if args.dirty_particles {
                 renderer.write_particles(gpu, &lat.particles)?;
+            } else {
+                renderer.write_particles(gpu, &[] as &[GpuParticle])?;
+            }
+        }
+        LiveScene::Hold(lat) => {
+            if args.record.is_none() {
+                renderer.write_hud(gpu, &scene_hold::hud(args))?;
+            }
+            renderer.retain_meshes(gpu, &scene_hold::meshes(), 1)?;
+            renderer.update_faces(gpu, &lat.faces());
+            renderer.retain_static_fibers(gpu, &lat.static_fibers, 0.0)?;
+            renderer.write_live_fibers(gpu, &lat.live, 0.0)?;
+            renderer.upload_hubs(gpu, &lat.hubs)?;
+            renderer.write_particles(gpu, &lat.particles)?;
+        }
+        LiveScene::Loom(loom) => {
+            renderer.write_hud(gpu, &scene_loom::hud(args, loom.live.len() as u32))?;
+            renderer.update_faces(gpu, &loom.fabric);
+            renderer.retain_static_fibers(gpu, &loom.static_fibers, args.tube_radius * 0.42)?;
+            renderer.write_live_fibers(gpu, &loom.live, args.tube_radius)?;
+            if args.dirty_particles {
+                renderer.write_particles(gpu, &loom.particles)?;
             } else {
                 renderer.write_particles(gpu, &[] as &[GpuParticle])?;
             }
@@ -259,7 +339,26 @@ fn assert_headless(
         "static fiber buffers were written {} times; expected static_uploads == 1",
         s.static_uploads
     );
-    if args.dirty_particles {
+    if args.scene == Scene::Hold {
+        let pulses = u64::from(frames / scene_hold::PULSE_PERIOD);
+        anyhow::ensure!(
+            s.live_fiber_writes >= pulses.saturating_sub(2) && s.live_fiber_writes <= pulses + 2,
+            "live_fiber_writes={} expected ≈ {pulses} (pulse every {} frames, not {frames})",
+            s.live_fiber_writes,
+            scene_hold::PULSE_PERIOD
+        );
+        anyhow::ensure!(
+            s.particle_skipped > s.ring_copies,
+            "particle_skipped={} should dwarf ring_copies={} (hash-skip path)",
+            s.particle_skipped,
+            s.ring_copies
+        );
+        anyhow::ensure!(
+            s.particle_fallbacks == 0,
+            "particle_fallbacks={} expected 0 on the hold pulse (not a dirty ocean)",
+            s.particle_fallbacks
+        );
+    } else if args.dirty_particles {
         anyhow::ensure!(
             s.particle_skipped == 0,
             "dirty particles must not hash-skip ({})",
@@ -273,7 +372,7 @@ fn assert_headless(
             s.particle_fallbacks
         );
     }
-    if args.dirty_fibers || args.dirty_rings {
+    if args.scene != Scene::Hold && (args.dirty_fibers || args.dirty_rings) {
         anyhow::ensure!(
             s.live_skipped < u64::from(frames),
             "dirty fibers/rings hashed-skip every frame (live_skipped={})",
@@ -298,7 +397,7 @@ fn run_headless(args: Args) -> Result<()> {
     println!("{}", gpu.report());
     let mut renderer = Renderer::new(&gpu)?;
     let mut camera = camera_from(&args);
-    let vis = vis_from(&args);
+    let mut vis = vis_from(&args);
     let mut live = live_from(&args);
     let grows_after_warmup = warmup(&gpu, &mut renderer, &args, &live)?;
 
@@ -323,9 +422,13 @@ fn run_headless(args: Args) -> Result<()> {
     for i in 0..n {
         tick_live(&args, &mut live, i);
         camera.tick_cinematic(dt);
+        let time = i as f32 * dt;
+        if args.scene == Scene::Hold {
+            scene_hold::breathe(&mut vis, time, args.tube_radius);
+        }
         upload_live(&gpu, &mut renderer, &args, &live)?;
         let grab = grab_frame(args.capture, i, n);
-        let captured = renderer.render(&mut gpu, &camera, &vis, i as f32 * dt, grab)?;
+        let captured = renderer.render(&mut gpu, &camera, &vis, time, grab)?;
         if let Some(frame) = captured {
             last_bytes = frame.bgra.len();
             if let Some(w) = writer.as_mut() {
@@ -434,6 +537,9 @@ impl App {
             self.camera.tick_cinematic(dt);
         }
         tick_live(&self.args, &mut self.live, self.frames_drawn);
+        if self.args.scene == Scene::Hold {
+            scene_hold::breathe(&mut self.vis, self.time, self.args.tube_radius);
+        }
         let gpu = self.gpu.as_mut().context("gpu")?;
         let renderer = self.renderer.as_mut().context("renderer")?;
         upload_live(gpu, renderer, &self.args, &self.live)?;

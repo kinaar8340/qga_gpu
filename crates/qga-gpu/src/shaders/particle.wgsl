@@ -35,7 +35,8 @@ fn vs_main(
     let cam_fwd = normalize(cross(frame.cam_up, frame.cam_right));
     let dist = max(length(inst_pos - frame.cam_pos), 1.0);
     let size = mix(0.018, 0.072, clamp(inst_mass * 0.50, 0.0, 1.0))
-        * clamp(dist / 16.0, 0.70, 1.70);
+        * clamp(dist / 16.0, 0.70, 1.70)
+        * max(frame.aperture, 0.2);
 
     let speed = length(inst_vel);
     var along = frame.cam_right;

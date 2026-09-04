@@ -5,8 +5,12 @@ The thing that hammers the 4090 is the workspace binary, not this folder.
 
 Hopf-fiber generation is **Model** (`glam::Quat` orbits in `hopf.rs`).
 `--scene gradient` is a **Model** lattice (instanced orbs + live ring
-centerlines). Renderer claims stay **Software fact**. This does **not**
-prove inner_cone mosaic/hull or qga-app cosmos.
+centerlines). `--scene hold` is a **Model** frozen lattice: static
+topology once, uniforms every frame, live harmonics + motes on a 30-frame
+pulse. Camera sits in the sheet. `--scene loom` is a **Model** inverse-Hopf
+from a Cartesian chart (latitudes → nested tori). Renderer claims stay
+**Software fact**. This does **not** prove inner_cone mosaic/hull or
+qga-app cosmos.
 
 Visual theme for `--scene gradient`: “gradient / structure” by
 Toshiyuki Nagashima (@ngsm)
@@ -36,10 +40,17 @@ make bench
 `benchmarks/results/qga-gpu-bench-4090.mp4` (every-frame capture Wait;
 not a ring proof). `make bench-gradient-record` is the fluid gradient
 ocean (`--scene gradient --fluid --record PATH.mp4`).
+`make bench-hold-record` is the held lattice, in-sheet, HUD off
+(`--scene hold --grid 64 --record PATH.mp4`). Capture Wait; not a skip
+proof — `make bench-hold` is the counter check. This 4090 (300 headless):
+`static_uploads=1`, `live_fiber_writes=10`, `particle_skipped=291`,
+`ring_copies=10`, `particle_fallbacks=0`.
 
 ```bash
 make bench-gradient           # 32×32 lattice, dirty rings, 600 frames
 make bench-gradient-windowed
+make bench-hold               # two-clock skip, 300 headless, no capture
+make bench-hold-record        # --grid 64 1440p → mp4 (capture Wait; not a skip proof)
 cargo run -p qga-gpu-bench --release -- --headless --scene gradient --preset smoke
 ```
 

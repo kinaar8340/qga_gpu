@@ -36,6 +36,7 @@ pub struct BenchRecord {
     pub ring_copies: u64,
     pub static_uploads: u64,
     pub static_skipped: u64,
+    pub live_fiber_writes: u64,
     pub live_skipped: u64,
     pub particle_skipped: u64,
     pub particle_grows: u64,
@@ -96,7 +97,12 @@ impl FrameTimer {
 pub fn vram_estimate(args: &Args) -> u64 {
     const R: u64 = 32;
     let particles = R * u64::from(args.particles);
-    let live = R * u64::from(args.fibers) * u64::from(args.fiber_samples);
+    let live_n = if args.scene == Scene::Loom {
+        args.fibers.saturating_mul(args.grid)
+    } else {
+        args.fibers
+    };
+    let live = R * u64::from(live_n) * u64::from(args.fiber_samples);
     let orbs = R * u64::from(args.orbs);
     let ring = particles * 3;
     let px = u64::from(args.width) * u64::from(args.height);
@@ -183,6 +189,7 @@ pub fn print_report(
     let rc = s.ring_copies;
     let su = s.static_uploads;
     let ss = s.static_skipped;
+    let lw = s.live_fiber_writes;
     let ls = s.live_skipped;
     let ps = s.particle_skipped;
     let pg = s.particle_grows;
@@ -210,12 +217,34 @@ pub fn print_report(
             args.particles,
             args.orbs
         ),
+        Scene::Hold => println!(
+            "done scene=hold preset={} frames={frames} {}x{} grid={} live={} samples={} particles={}",
+            args.preset.as_str(),
+            args.width,
+            args.height,
+            args.grid,
+            args.fibers,
+            args.fiber_samples,
+            args.particles
+        ),
+        Scene::Loom => println!(
+            "done scene=loom preset={} frames={frames} {}x{} flux={} grid={} mosaic={} lambda={:.2} samples={} particles={}",
+            args.preset.as_str(),
+            args.width,
+            args.height,
+            args.flux.as_str(),
+            args.grid,
+            args.mosaic,
+            args.lambda,
+            args.fiber_samples,
+            args.particles
+        ),
     }
     println!(
         "ms_mean={mean:.3} ms_min={min:.3} ms_max={max:.3} hz={hz:.1} wall_ms={wall:.1} capture_bytes={last_bytes}"
     );
     println!(
-        "write_buffer={wb} ring_copies={rc} static_uploads={su} static_skipped={ss} live_skipped={ls} particle_skipped={ps} particle_grows={pg} particle_fallbacks={pf} fiber_reallocs={fr}"
+        "write_buffer={wb} ring_copies={rc} static_uploads={su} live_fiber_writes={lw} static_skipped={ss} live_skipped={ls} particle_skipped={ps} particle_grows={pg} particle_fallbacks={pf} fiber_reallocs={fr}"
     );
     println!("claims=Software fact  not_a_proof_of=inner_cone mosaic / qga-app cosmos");
 }
@@ -259,6 +288,7 @@ pub fn record(
         ring_copies: s.ring_copies,
         static_uploads: s.static_uploads,
         static_skipped: s.static_skipped,
+        live_fiber_writes: s.live_fiber_writes,
         live_skipped: s.live_skipped,
         particle_skipped: s.particle_skipped,
         particle_grows: s.particle_grows,

@@ -29,14 +29,17 @@ fn vs_main(
     @location(2) inst_radius: f32,
     @location(3) inst_color: vec3<f32>,
 ) -> VsOut {
-    let r = inst_radius * (1.0 + 0.08 * sin(frame.time * 1.4 + inst_pos.x));
+    let r = inst_radius
+        * (1.0 + 0.08 * sin(frame.time * 1.4 + inst_pos.x))
+        * max(frame.aperture, 0.2);
     let world = inst_pos
         + frame.cam_right * corner.x * r
         + frame.cam_up * corner.y * r;
     var out: VsOut;
     out.clip = frame.view_proj * vec4<f32>(world, 1.0);
     out.uv = corner;
-    out.color = inst_color;
+    let warmth = clamp((frame.zener - 2.4) * 0.12, -0.2, 0.2);
+    out.color = inst_color + vec3<f32>(warmth, warmth * 0.4, -warmth * 0.3);
     return out;
 }
 

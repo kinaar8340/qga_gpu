@@ -63,7 +63,8 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     } else {
         side = frame.cam_right;
     }
-    let radius = select(frame.tube_radius, fiber_meta.radius, fiber_meta.radius > 1e-8);
+    let base_r = select(frame.tube_radius, fiber_meta.radius, fiber_meta.radius > 1e-8);
+    let radius = base_r * max(frame.aperture, 0.05);
     side = side * radius;
 
     var pos: vec3<f32>;
