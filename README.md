@@ -6,20 +6,68 @@ wgpu/Vulkan renderer. **This crate owns the frame.** Geometry meaning lives in
 [`qga_engine`](https://github.com/kinaar8340/qga_engine) (`qga-math` / `qga-sim`
 / `qga-app`) and the manuscript [`qga`](https://github.com/kinaar8340/qga).
 
-Renderer claims are **Software fact**.
+Renderer claims are **Software fact**. Geometry in the public demo is **Model**.
 
-Workspace:
+## Ten minutes
+
+```bash
+git clone https://github.com/kinaar8340/qga_gpu
+cd qga_gpu
+make demo
+```
+
+That is the public demo: a 64×64 speaker lattice (instanced geodesic orbs +
+one live ring per cell), a glass fabric, and a **65 536-particle** rainbow
+ocean. Esc (or close the window) prints `UploadStats`. LMB orbit, wheel zoom,
+`C` cinematic, `G` glow, Space pause.
+
+Look at the last lines:
 
 ```
-crates/qga-gpu         library (WGSL in crates/qga-gpu/src/shaders/)
-crates/qga-gpu-demo    1 sphere + 2 cones + separator torus + 4k particles
+done scene=gradient … grid=64 orbs=4096 rings=4096 … particles=65536
+write_buffer=… ring_copies=… static_uploads=1 … particle_skipped=0
+  particle_grows=… particle_fallbacks=…
+claims=Software fact  not_a_proof_of=inner_cone mosaic / qga-app cosmos
 ```
 
-Extracted from `qga_engine/crates/qga-gpu` and the inner_cone upload path.
-`inner_cone` @ `03e1fb2` path-depends on this crate (`features = ["capture"]`).
-[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` git-depends
-with no `rev` (`Cargo.lock` pins a sha). This extract does **not** open a
-PR into those repos. See [MIGRATION.md](MIGRATION.md).
+Dirty particles: `particle_skipped == 0` and
+`ring_copies + particle_fallbacks >= frames`. `static_uploads == 1` means the
+static topology was written once. Fallbacks are counted, not fatal.
+
+No window:
+
+```bash
+make demo-headless   # 30 frames, --no-capture; same counters, asserts on exit
+```
+
+4k sculpture smoke (not the public demo):
+
+```bash
+make demo-tiny       # 1 sphere + 2 cones + torus + 4k particles
+make ring            # 300 dirty 4k frames, headless
+```
+
+Those counters prove **this crate’s** upload path. They do **not** prove
+`inner_cone` mosaic/hull or `qga-app` cosmos. `inner_cone` does not print
+`UploadStats`. Neither does `qga-app --headless`.
+
+The public demo has **no path to `qga_engine`**. Optional `--features qga-math`
+on `qga-gpu` adds `From<&qga_math::Fiber>` and needs a local engine checkout.
+Do **not** turn that feature on for `inner_cone`: fiber conversion stays in
+`geometry::gpu_fiber`.
+
+## Pin this crate
+
+A stranger should pin a published sha, not float `main`:
+
+```toml
+qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "<published sha>" }
+```
+
+[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` still
+git-depends with **no `rev`** (`Cargo.lock` pins a sha). This extract does
+**not** open a PR to add that pin. `inner_cone` @ `03e1fb2` is a path dep.
+See [MIGRATION.md](MIGRATION.md).
 
 ## Hardware target (this machine)
 
@@ -29,39 +77,78 @@ PR into those repos. See [MIGRATION.md](MIGRATION.md).
 | CPU | AMD Ryzen 9 3900X, 12 cores / 24 threads |
 | OS | Ubuntu, GNOME, **Wayland** |
 
-Vulkan through `wgpu` only. No OpenGL. CUDA is out of scope for v0.
+Vulkan through `wgpu` only. No OpenGL. CUDA is out of scope for v0. `make demo`
+is sized for this box (`--grid 64 --fluid` → 4096 speakers + 65 536 motes).
+
+## Workspace
+
+```
+crates/qga-gpu         library (WGSL in crates/qga-gpu/src/shaders/)
+crates/qga-gpu-demo    4k sculpture smoke (`make demo-tiny`)
+crates/qga-gpu-bench   public 65k ocean + Hopf sculpture bench
+```
+
+Extracted from `qga_engine/crates/qga-gpu` and the inner_cone upload path.
 
 ## Build
 
 ```bash
-make check          # cargo check --workspace && cargo test -p qga-gpu
-make demo           # windowed
-make headless       # 8 offscreen frames; requires static_uploads == 1
-make ring           # 300 dirty frames, headless (in-flight map_async)
-make ring-windowed  # 300 dirty frames, windowed FIFO/mailbox, then exit
+make check                   # cargo check --workspace && cargo test -p qga-gpu
+make demo                    # public 65k ocean, until Esc, prints UploadStats
+make demo-headless           # 30 offscreen 65k frames; asserts counters
+make demo-tiny               # 4k sculpture window
+make headless                # 8 offscreen 4k frames; static_uploads == 1
+make ring                    # 300 dirty 4k frames, headless (in-flight map_async)
+make ring-windowed           # 300 dirty 4k frames, windowed, then exit
+make bench                   # headless Hopf --preset 4090, 600 dirty frames
+make bench-windowed          # same, Wayland window, then exit
+make bench-smoke             # tiny Hopf scene, no capture
+make bench-gradient          # --scene gradient --preset 4090, 32×32 lattice
+make bench-gradient-windowed # speakers + glass + 65k bed, then exit
+make bench-gradient-record   # same look, encode mp4 via --record
 ```
+
+`--frames N` exits after N presents (windowed or headless). `--frames 0` is
+unlimited windowed (Esc still prints stats).
+
+## Benchmark
+
+Software fact of `qga-gpu-bench`. Not a proof of inner_cone mosaic or qga-app
+cosmos. Hopf generator and skyrmion-ocean field are **Model** (`glam` in the
+bench crate). The renderer stays an upload path.
+
+Scenes:
+
+| `--scene` | CLI default | What it is |
+|-----------|-------------|------------|
+| `hopf` / `sculpture` | yes | Hopf field + observer sculpture |
+| `gradient` / `ngsm` | `make demo` | Lattice of instanced orbs + one thin ring per cell. **Model**: ngsm “gradient / structure”; rainbow ocean and ring tilts from a Stokes-skyrmion-like field (Chen et al. 2026; Kinder arXiv:2607.16520). Not a p5.js port and not those papers’ data. `--fluid` adds the 65 536-particle bed. |
+
+`make demo` is the public 65k scene. `make ring` is the 4k dirty-particle
+smoke. Hopf bench is a different scale: observer sphere + cyan/orange cones +
+gold torus (tessellated once), live Hopf tubes via `write_live_fibers`, flux
+motes via `write_particles`, instanced `draw_geodesic_orb`. Live params stay
+uniforms.
 
 ```bash
-cargo check --workspace
-cargo test -p qga-gpu
-cargo run -p qga-gpu-demo --release
-cargo run -p qga-gpu-demo --release -- --headless --frames 8
-cargo run -p qga-gpu-demo --release -- --dirty-particles
-cargo run -p qga-gpu-demo --release -- --dirty-particles --frames 300
+make bench                    # headless hopf 4090, 600 dirty frames, first+last capture
+make bench-windowed
+make bench-smoke              # 256 fibers / 4k motes / 60 frames, no capture
+make bench-gradient           # 32×32 lattice, dirty rings
+make bench-gradient-windowed  # --fluid 65k bed
+make bench-gradient-record    # --grid 64 --fluid → mp4 (capture Wait; not a ring proof)
+./benchmarks/run.sh           # smoke then hopf 4090 --no-capture; JSON under benchmarks/results/
 ```
 
-Demo window: LMB orbit, wheel zoom, `C` cinematic, `G` glow, Space pause, Esc quit.
-`--dirty-particles` nudges the 4k field every frame. `--frames N` exits after N presents (windowed or headless).
+Hopf preset `4090` (this machine): 4096 fibers × 64 samples, 262 144 particles,
+1024 orbs, glow, 1920×1080, 600 frames. Caps refuse before wgpu OOM
+(`--particles` ≤ 8 388 608, combined 32 B records ≤ 1 GiB).
 
-The default demo has **no path to `qga_engine`**. Optional `--features qga-math`
-on `qga-gpu` adds `From<&qga_math::Fiber>` and needs a local engine checkout.
-Do **not** turn that feature on for `inner_cone`: fiber conversion stays in
-`geometry::gpu_fiber`.
-
-`make headless` / `make ring` are the sculpture-still-lattice proof
-(`static_uploads == 1`; dirty particles `ring_copies + particle_fallbacks >= frames`).
-`inner_cone` has no headless binary yet, so those counters are not asserted
-on `--export`. `qga-app --headless` does not print `UploadStats` either.
+Acceptance (headless): `static_uploads == 1`; dirty particles
+`particle_skipped == 0` and `ring_copies + particle_fallbacks >= frames`;
+dirty fibers/rings do not no-op every frame; `particle_grows == 0` after
+warmup on `4090` / `ring-qga`. Fallbacks counted, not fatal. Do not add a 4th
+ring slot unless windowed fallbacks exceed ~1%.
 
 ## Consumers
 
@@ -70,8 +157,9 @@ shows `73de02d`. Engine snapshot: `main` @ `db5194e`.
 
 | Consumer | Dep | Not in this extract |
 |----------|-----|---------------------|
-| `inner_cone` | `qga-gpu = { path = "../qga_gpu/crates/qga-gpu", features = ["capture"] }` | do not edit inner_cone here |
-| [`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` | git, **no `rev`** (lock pins sha); `features = ["winit", "headless", "capture", "glow"]` | do not PR into qga_engine here |
+| stranger / other crate | `qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "<sha>" }` | pin a published sha; do not float `main` |
+| `inner_cone` | `qga-gpu = { path = "../qga_gpu/crates/qga-gpu", features = ["capture"] }` | do not edit inner_cone here; it does not print `UploadStats` |
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` | git, **no `rev`** (lock pins sha); `features = ["winit", "headless", "capture", "glow"]` | do not PR the pin from this extract |
 
 `capture` is the right local set for `inner_cone --export`. A `qga_gpu` `main`
 push can change record layout or feature defaults while `inner_cone`’s path
@@ -93,8 +181,9 @@ renderer so callers do not rebuild GPU topology every frame.
 
 **Dirty flag (static topology).** `retain_meshes` / `retain_static_fibers`
 hash mesh kind + lod + tube radius + centerline bytes. Identical re-upload is
-a no-op. `UploadStats.static_uploads` counts real GPU writes; the headless
-demo requires `static_uploads == 1` across 8 frames. `static_skipped` counts
+a no-op. `UploadStats.static_uploads` counts real GPU writes; `make headless`
+requires `static_uploads == 1` across 8 frames, `make demo-headless` the same
+across 30 frames of the 65k ocean. `static_skipped` counts
 the hits. `mark_static_dirty` forces the next retain. Live params
 (`aperture`, `height_scale`, `zener`, `time`) are **frame uniforms** — they do
 not retessellate cones/spheres/tori.
@@ -114,7 +203,8 @@ arena). Profile `ring_copies` vs `particle_fallbacks` on this 4090 before
 meshlets. Dirty-every-frame smoke:
 
 ```bash
-make ring            # 300 frames headless; capture first+last only
+make demo-headless   # 30 frames, 65k ocean, --no-capture
+make ring            # 300 frames headless 4k; capture first+last only
 make ring-windowed   # 300 presents; mailbox/FIFO in-flight
 cargo run -p qga-gpu-demo --release -- --headless --frames 300 --dirty-particles
 cargo run -p qga-gpu-demo --release -- --dirty-particles --frames 300

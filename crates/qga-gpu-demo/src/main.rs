@@ -1,4 +1,5 @@
 //! Tiny binary: 1 sphere, 2 cones, separator torus, 4k particles.
+//! Smoke only (`make demo-tiny` / `make ring`). Public demo is `make demo`.
 //! Software fact: no QGA scene graph.
 
 use anyhow::{Context, Result};

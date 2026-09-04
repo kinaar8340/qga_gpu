@@ -1,0 +1,20 @@
+[package]
+name = "qga-gpu-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Public 65k ocean demo + 4090 Hopf sculpture bench"
+default-run = "qga-gpu-bench"
+
+[dependencies]
+qga-gpu = { workspace = true, features = ["winit", "headless", "capture", "glow"] }
+glam.workspace = true
+winit.workspace = true
+anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+pollster.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

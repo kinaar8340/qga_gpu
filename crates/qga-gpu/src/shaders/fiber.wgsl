@@ -92,6 +92,13 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     return out;
 }
 
+/// Unit-s hue wheel. Software fact of this shader, not a QGA theorem.
+fn hue_rgb(h: f32) -> vec3<f32> {
+    let k = vec3<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0);
+    let p = abs(fract(vec3<f32>(h) + k) * 6.0 - 3.0);
+    return clamp(p - 1.0, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let tau = 6.28318530718;
@@ -111,10 +118,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let fres = pow(1.0 - abs(v.y), 1.8);
     let breathe = sin(frame.time * 0.8 + in.phase * 0.3) * 0.5 + 0.5;
 
-    var color = in.color * (0.50 + flux * 0.85 + (nodes + nodes2) * 0.55);
-    color += in.color * max(rim, fres) * 0.40;
-    color *= (0.88 + breathe * frame.pulse * 0.18) * (0.70 + 0.40 * frame.glow);
+    // S¹ phase as RGB, mixed onto the uploaded fiber color (Hopf S² in the bench).
+    let phase_rgb = hue_rgb(fract(in.phase / tau));
+    let albedo = mix(in.color, phase_rgb, 0.70);
 
-    let alpha = 0.82 + 0.14 * max(flux, nodes);
+    var color = albedo * (0.22 + flux * 0.38 + (nodes + nodes2) * 0.16);
+    color += albedo * max(rim, fres) * 0.12;
+    color *= (0.86 + breathe * frame.pulse * 0.12) * (0.58 + 0.18 * frame.glow);
+
+    let alpha = 0.46 + 0.22 * max(flux, nodes);
     return vec4<f32>(color, clamp(alpha, 0.0, 1.0));
 }

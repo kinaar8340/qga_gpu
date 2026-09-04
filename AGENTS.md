@@ -58,7 +58,11 @@ rev (Cargo.lock pins a sha). Features winit/headless/capture/glow. Fiber
 conversion in qga-app::convert. Cosmos default 262144 (cap 524288); realm
 128x128 fibers, 256^2 terrain. Scenes/CLI/controls live in that README and
 docs/SCENES.md. Do not copy them here.
-inner_cone has no headless binary; make headless / make ring here are the
-static_uploads == 1 and dirty-ring proof (this 4090: 8 still su=1; 300 dirty
-rc=301 pf=0 pg=0). Does not prove inner_cone mosaic/hull or qga-app scenes.
-Engine git float until qga-app pins rev = f263ea7. Do not add a 4th ring slot.
+Public demo: make demo is qga-gpu-bench --scene gradient --preset 4090
+--grid 64 --fluid (4096 speakers + 65536 particles, until Esc, UploadStats
+on exit). make demo-tiny / make ring stay 4k smoke. inner_cone has no
+headless binary and does not print UploadStats; make headless / make ring
+here are the 4k static_uploads == 1 and dirty-ring proof (this 4090: 8
+still su=1; 300 dirty rc=301 pf=0 pg=0). Does not prove inner_cone
+mosaic/hull or qga-app scenes. Engine git float until qga-app pins
+rev = f263ea7. This extract does not PR that pin. Do not add a 4th ring slot.

@@ -16,13 +16,15 @@ qga_gpu/
 ├── crates/qga-gpu/                 # library
 │   ├── src/{context,camera,renderer,types,mesh,hud,profile}.rs
 │   └── src/shaders/{fiber,particle,hub,face,line,hud,blit,post}.wgsl
-└── crates/qga-gpu-demo/            # window + headless smoke
+├── crates/qga-gpu-demo/            # 4k sculpture smoke
+└── crates/qga-gpu-bench/           # public 65k ocean + Hopf sculpture bench
 ```
 
 | Crate | Role |
 |-------|------|
 | `qga-gpu` | Vulkan device, pipelines, resident buffers, upload API |
-| `qga-gpu-demo` | 1 sphere, 2 cones, separator torus, 4k particles |
+| `qga-gpu-demo` | 1 sphere, 2 cones, separator torus, 4k particles (`make demo-tiny`) |
+| `qga-gpu-bench` | Public demo: 65k particle ocean (`make demo`). Hopf bench is `--scene hopf`. Geometry is glam **Model**. |
 
 WGSL lives in-tree under `crates/qga-gpu/src/shaders/`. No runtime Python.
 

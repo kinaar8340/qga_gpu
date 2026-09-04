@@ -1,0 +1,8 @@
+*.png
+*.bmp
+*.bin
+*.bgra
+*.json
+*.mp4
+!schema.json
+!sample-4090.json

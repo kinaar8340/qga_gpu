@@ -60,6 +60,13 @@ fn vs_main(
     return out;
 }
 
+/// Unit-s hue wheel. Software fact of this shader, not a QGA theorem.
+fn hue_rgb(h: f32) -> vec3<f32> {
+    let k = vec3<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0);
+    let p = abs(fract(vec3<f32>(h) + k) * 6.0 - 3.0);
+    return clamp(p - 1.0, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let c = in.uv * 2.0 - 1.0;
@@ -71,15 +78,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let halo = 1.0 - smoothstep(0.18, 1.0, d);
     var rgb: vec3<f32>;
     if in.hue > 0.0005 {
-        if in.hue < 0.20 {
-            rgb = vec3<f32>(1.0, 0.82, 0.42);
-        } else if in.hue < 0.40 {
-            rgb = vec3<f32>(1.0, 0.40, 0.08);
-        } else if in.hue < 0.68 {
-            rgb = vec3<f32>(0.20, 0.62, 1.0);
-        } else {
-            rgb = vec3<f32>(1.0, 0.28, 0.58);
-        }
+        rgb = hue_rgb(in.hue);
     } else {
         rgb = mix(
             vec3<f32>(0.62, 0.86, 1.0),
