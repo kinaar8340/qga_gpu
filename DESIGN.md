@@ -17,14 +17,14 @@ qga_gpu/
 │   ├── src/{context,camera,renderer,types,mesh,hud,profile}.rs
 │   └── src/shaders/{fiber,particle,hub,face,line,hud,blit,post}.wgsl
 ├── crates/qga-gpu-demo/            # 4k sculpture smoke
-└── crates/qga-gpu-bench/           # public 65k ocean + Hopf / loom / hold bench
+└── crates/qga-gpu-bench/           # public 65k ocean + Hopf / loom / hold / core-loom bench
 ```
 
 | Crate | Role |
 |-------|------|
 | `qga-gpu` | Vulkan device, pipelines, resident buffers, upload API |
 | `qga-gpu-demo` | 1 sphere, 2 cones, separator torus, 4k particles (`make demo-tiny`) |
-| `qga-gpu-bench` | Public demo: 65k particle ocean (`make demo`). Hopf bench is `--scene hopf`. `hold` is the two-clock skip (`make bench-hold`). `loom` is inverse Hopf from a Cartesian chart, latitudes → nested tori (`make bench-loom`). Geometry is glam **Model**. |
+| `qga-gpu-bench` | Public demo: 65k particle ocean (`make demo`). Hopf bench is `--scene hopf`. `hold` is the two-clock skip (`make bench-hold`). `loom` is inverse Hopf from a Cartesian chart, latitudes → nested tori (`make bench-loom`). `core` is coincident-addressed stacked lattice (`make bench-core`): X/Y half-select, Z inhibit, discrete \(N_\mathrm{sk}\). Geometry is glam **Model**. |
 
 WGSL lives in-tree under `crates/qga-gpu/src/shaders/`. No runtime Python.
 

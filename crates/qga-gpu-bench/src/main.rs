@@ -5,6 +5,7 @@ mod args;
 mod hopf;
 mod record;
 mod scene;
+mod scene_core;
 mod scene_gradient;
 mod scene_hold;
 mod scene_loom;
@@ -15,6 +16,7 @@ use args::{Args, Capture, Preset, Scene};
 use glam::{Mat4, Vec3};
 use hopf::HopfField;
 use qga_gpu::{Camera, GpuContext, GpuFiber, GpuParticle, Renderer, UploadStats, VisualState};
+use scene_core::{CoreVolume, SliderKind};
 use scene_gradient::GradientLattice;
 use scene_hold::HoldLattice;
 use scene_loom::LoomBraid;
@@ -53,6 +55,7 @@ enum LiveScene {
     Gradient(GradientLattice),
     Hold(HoldLattice),
     Loom(LoomBraid),
+    Core(CoreVolume),
 }
 
 fn vis_from(args: &Args) -> VisualState {
@@ -70,6 +73,7 @@ fn camera_from(args: &Args) -> Camera {
         Scene::Gradient => scene_gradient::camera_distance(args),
         Scene::Hold => scene_hold::camera_distance(args),
         Scene::Loom => scene_loom::camera_distance(args),
+        Scene::Core => scene_core::camera_distance(args),
     };
     let mut cam = Camera::orbit(Vec3::ZERO, dist);
     match args.scene {
@@ -97,6 +101,11 @@ fn camera_from(args: &Args) -> Camera {
             cam.pitch = 0.36;
             cam.near = 0.05;
         }
+        Scene::Core => {
+            cam.yaw = 0.58;
+            cam.pitch = 0.48;
+            cam.near = 0.04;
+        }
     }
     cam.aspect = args.width as f32 / args.height.max(1) as f32;
     cam.cinematic = args.cinematic;
@@ -115,6 +124,7 @@ fn live_from(args: &Args) -> LiveScene {
         Scene::Gradient => LiveScene::Gradient(GradientLattice::new(args)),
         Scene::Hold => LiveScene::Hold(HoldLattice::new(args)),
         Scene::Loom => LiveScene::Loom(LoomBraid::new(args)),
+        Scene::Core => LiveScene::Core(CoreVolume::new(args)),
     }
 }
 
@@ -151,6 +161,16 @@ fn queue_orbs_loom(renderer: &mut Renderer, loom: &LoomBraid) {
     }
 }
 
+fn queue_orbs_core(renderer: &mut Renderer, vol: &CoreVolume) {
+    for (pos, color, scale, alpha) in vol.orb_instances() {
+        renderer.draw_geodesic_orb_alpha(
+            Mat4::from_translation(pos) * Mat4::from_scale(Vec3::splat(scale)),
+            color,
+            alpha,
+        );
+    }
+}
+
 fn tick_live(args: &Args, live: &mut LiveScene, frame: u32) {
     match live {
         LiveScene::Hopf(hopf) => {
@@ -180,6 +200,11 @@ fn tick_live(args: &Args, live: &mut LiveScene, frame: u32) {
             }
             if args.dirty_particles {
                 loom.advance_motes(0.008);
+            }
+        }
+        LiveScene::Core(vol) => {
+            if CoreVolume::is_pulse(frame) {
+                vol.pulse_write();
             }
         }
     }
@@ -222,6 +247,10 @@ fn upload_live(
                 renderer.write_particles(gpu, &loom.particles)?;
             }
             queue_orbs_loom(renderer, loom);
+        }
+        LiveScene::Core(vol) => {
+            queue_orbs_core(renderer, vol);
+            renderer.write_hud(gpu, &vol.hud())?;
         }
     }
     Ok(())
@@ -282,6 +311,9 @@ fn warmup(gpu: &GpuContext, renderer: &mut Renderer, args: &Args, live: &LiveSce
                 renderer.write_particles(gpu, &[] as &[GpuParticle])?;
             }
         }
+        LiveScene::Core(vol) => {
+            renderer.update_line_segments(gpu, &vol.frame_edges(), CoreVolume::frame_style());
+        }
     }
     Ok(renderer.upload_stats().particle_grows)
 }
@@ -317,7 +349,11 @@ fn finish(
     stats: UploadStats,
     timer: &FrameTimer,
     grows_after_warmup: u64,
+    live: &LiveScene,
 ) -> Result<()> {
+    if let LiveScene::Core(vol) = live {
+        vol.print_sense();
+    }
     stats::print_report(args, frames, last_bytes, stats, timer);
     if args.headless && args.record.is_none() {
         assert_headless(args, frames, stats, grows_after_warmup)?;
@@ -334,6 +370,33 @@ fn assert_headless(
     s: UploadStats,
     grows_after_warmup: u64,
 ) -> Result<()> {
+    if args.scene == Scene::Core {
+        anyhow::ensure!(
+            s.static_uploads == 0,
+            "core rings are hidden; static_uploads={} expected 0",
+            s.static_uploads
+        );
+        anyhow::ensure!(
+            s.live_fiber_writes == 0,
+            "core separator rings must stay hidden (live_fiber_writes={})",
+            s.live_fiber_writes
+        );
+        anyhow::ensure!(
+            s.particle_fallbacks == 0,
+            "particle_fallbacks={} expected 0 on the core wave",
+            s.particle_fallbacks
+        );
+        if matches!(args.preset, Preset::FourK90 | Preset::RingQga) {
+            anyhow::ensure!(
+                s.particle_grows == grows_after_warmup,
+                "particle_grows={} after warmup {} (expected no further grows on {})",
+                s.particle_grows,
+                grows_after_warmup,
+                args.preset.as_str()
+            );
+        }
+        return Ok(());
+    }
     anyhow::ensure!(
         s.static_uploads == 1,
         "static fiber buffers were written {} times; expected static_uploads == 1",
@@ -358,6 +421,19 @@ fn assert_headless(
             "particle_fallbacks={} expected 0 on the hold pulse (not a dirty ocean)",
             s.particle_fallbacks
         );
+    } else if args.scene == Scene::Core {
+        // One drive phase per present. Skip-path is hold's job.
+        let pulses = u64::from(frames.saturating_sub(1) / scene_core::PULSE_PERIOD);
+        anyhow::ensure!(
+            s.live_fiber_writes >= pulses.saturating_sub(2) && s.live_fiber_writes <= pulses + 3,
+            "live_fiber_writes={} expected ≈ {pulses} (core raster, not {frames} still frames)",
+            s.live_fiber_writes
+        );
+        anyhow::ensure!(
+            s.particle_fallbacks == 0,
+            "particle_fallbacks={} expected 0 on the core raster",
+            s.particle_fallbacks
+        );
     } else if args.dirty_particles {
         anyhow::ensure!(
             s.particle_skipped == 0,
@@ -372,7 +448,7 @@ fn assert_headless(
             s.particle_fallbacks
         );
     }
-    if args.scene != Scene::Hold && (args.dirty_fibers || args.dirty_rings) {
+    if !matches!(args.scene, Scene::Hold | Scene::Core) && (args.dirty_fibers || args.dirty_rings) {
         anyhow::ensure!(
             s.live_skipped < u64::from(frames),
             "dirty fibers/rings hashed-skip every frame (live_skipped={})",
@@ -426,6 +502,9 @@ fn run_headless(args: Args) -> Result<()> {
         if args.scene == Scene::Hold {
             scene_hold::breathe(&mut vis, time, args.tube_radius);
         }
+        if let LiveScene::Core(vol) = &live {
+            vol.breathe(&mut vis);
+        }
         upload_live(&gpu, &mut renderer, &args, &live)?;
         let grab = grab_frame(args.capture, i, n);
         let captured = renderer.render(&mut gpu, &camera, &vis, time, grab)?;
@@ -457,6 +536,7 @@ fn run_headless(args: Args) -> Result<()> {
         renderer.upload_stats(),
         &timer,
         grows_after_warmup,
+        &live,
     )
 }
 
@@ -476,9 +556,26 @@ struct App {
     grows_after_warmup: u64,
     timer: FrameTimer,
     last_bytes: usize,
+    slider_drag: Option<SliderKind>,
 }
 
 impl App {
+    fn cursor_ndc(&self) -> [f32; 2] {
+        self.cursor_ndc_at(self.cursor[0], self.cursor[1])
+    }
+
+    fn cursor_ndc_at(&self, x: f32, y: f32) -> [f32; 2] {
+        let (w, h) = self
+            .window
+            .as_ref()
+            .map(|w| {
+                let s = w.inner_size();
+                (s.width.max(1) as f32, s.height.max(1) as f32)
+            })
+            .unwrap_or((1.0, 1.0));
+        [2.0 * x / w - 1.0, 1.0 - 2.0 * y / h]
+    }
+
     fn new(args: Args) -> Self {
         let live = live_from(&args);
         let camera = camera_from(&args);
@@ -499,6 +596,7 @@ impl App {
             grows_after_warmup: 0,
             timer: FrameTimer::new(),
             last_bytes: 0,
+            slider_drag: None,
         }
     }
 
@@ -540,6 +638,9 @@ impl App {
         if self.args.scene == Scene::Hold {
             scene_hold::breathe(&mut self.vis, self.time, self.args.tube_radius);
         }
+        if let LiveScene::Core(vol) = &self.live {
+            vol.breathe(&mut self.vis);
+        }
         let gpu = self.gpu.as_mut().context("gpu")?;
         let renderer = self.renderer.as_mut().context("renderer")?;
         upload_live(gpu, renderer, &self.args, &self.live)?;
@@ -559,6 +660,7 @@ impl App {
                 renderer.upload_stats(),
                 &self.timer,
                 self.grows_after_warmup,
+                &self.live,
             )?;
             return Ok(false);
         }
@@ -574,6 +676,7 @@ impl App {
                 renderer.upload_stats(),
                 &self.timer,
                 self.grows_after_warmup,
+                &self.live,
             );
         }
     }
@@ -612,14 +715,32 @@ impl ApplicationHandler for App {
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left {
                     self.lmb = state == ElementState::Pressed;
+                    if self.lmb {
+                        let ndc = self.cursor_ndc();
+                        if let LiveScene::Core(vol) = &mut self.live {
+                            self.slider_drag = CoreVolume::hit_slider(ndc);
+                            if let Some(kind) = self.slider_drag {
+                                vol.apply_slider(kind, ndc[0]);
+                            }
+                        }
+                    } else {
+                        self.slider_drag = None;
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let x = position.x as f32;
                 let y = position.y as f32;
                 if self.lmb {
-                    self.camera
-                        .orbit_delta(x - self.cursor[0], y - self.cursor[1]);
+                    let ndc_x = self.cursor_ndc_at(x, y)[0];
+                    if let (Some(kind), LiveScene::Core(vol)) =
+                        (self.slider_drag, &mut self.live)
+                    {
+                        vol.apply_slider(kind, ndc_x);
+                    } else {
+                        self.camera
+                            .orbit_delta(x - self.cursor[0], y - self.cursor[1]);
+                    }
                 }
                 self.cursor = [x, y];
             }
@@ -644,6 +765,26 @@ impl ApplicationHandler for App {
                         KeyCode::KeyC => self.camera.cinematic = !self.camera.cinematic,
                         KeyCode::KeyG => {
                             self.vis.glow = if self.vis.glow > 0.4 { 0.18 } else { 0.55 }
+                        }
+                        KeyCode::BracketLeft | KeyCode::Comma => {
+                            if let LiveScene::Core(vol) = &mut self.live {
+                                vol.nudge_count(-1);
+                            }
+                        }
+                        KeyCode::BracketRight | KeyCode::Period => {
+                            if let LiveScene::Core(vol) = &mut self.live {
+                                vol.nudge_count(1);
+                            }
+                        }
+                        KeyCode::Minus => {
+                            if let LiveScene::Core(vol) = &mut self.live {
+                                vol.nudge_speed(-0.15);
+                            }
+                        }
+                        KeyCode::Equal => {
+                            if let LiveScene::Core(vol) = &mut self.live {
+                                vol.nudge_speed(0.15);
+                            }
                         }
                         _ => {}
                     }

@@ -6,8 +6,9 @@ use std::path::PathBuf;
 const PARTICLE_CAP: u32 = 8_388_608;
 const FIBER_CAP: u32 = 16_384;
 const SAMPLE_CAP: u32 = 256;
-const ORB_CAP: u32 = 65_536;
+const ORB_CAP: u32 = 262_144;
 const GRID_CAP: u32 = 96;
+const PLANES_CAP: u32 = 64;
 const STAGING_BUDGET: u64 = 1_073_741_824;
 const RECORD: u64 = 32;
 
@@ -50,6 +51,8 @@ pub enum Scene {
     Hold,
     /// Shared Hopf frame + stacked phase-color braid (photonic fabric loom).
     Loom,
+    /// Coincident-addressed stacked lattice. Skyrmion library, not RGB.
+    Core,
 }
 
 impl Scene {
@@ -59,6 +62,7 @@ impl Scene {
             Self::Gradient => "gradient",
             Self::Hold => "hold",
             Self::Loom => "loom",
+            Self::Core => "core",
         }
     }
 
@@ -68,6 +72,7 @@ impl Scene {
             "gradient" | "ngsm" => Some(Self::Gradient),
             "hold" => Some(Self::Hold),
             "loom" | "braid" | "fabric" => Some(Self::Loom),
+            "core" | "coreloom" | "volume" => Some(Self::Core),
             _ => None,
         }
     }
@@ -132,6 +137,8 @@ pub struct Args {
     pub lambda: f32,
     /// Loom mosaic tiles on a side (1 = one chart). `--mosaic 2` / `2x2`.
     pub mosaic: u32,
+    /// Core-loom stacked planes (Z). Unused by other scenes.
+    pub planes: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -237,6 +244,10 @@ pub fn usage() -> &'static str {
   --scene loom is a Model of inverse Hopf from a Cartesian Γ-chart:
   N×N warp/weft (static), cells near three S² latitudes (live tubes),
   particle fill. Alias braid|fabric. Not a fabricated silica loom.
+  --scene core is a Model of coincident-addressed core memory on a
+  stacked orb lattice. X/Y half-select, Z inhibit, S = discrete N_sk.
+  Library {Néel, Bloch, anti, bimeron} packed in a 32-byte cell.
+  Alias coreloom|volume. Not a ferrite plane and not arXiv:2608.29551's chip.
 
   Public demo (make demo): --scene gradient --preset 4090 --grid 64 --fluid
   until Esc. 4096 speakers + 65536 motes. Prints UploadStats on exit.
@@ -247,7 +258,7 @@ pub fn usage() -> &'static str {
   Loom smoke (make bench-loom-smoke): --scene loom --preset smoke.
 
 Mode
-  --scene hopf|sculpture|gradient|ngsm|hold|loom|braid|fabric   default hopf (CLI; make demo is gradient)
+  --scene hopf|sculpture|gradient|ngsm|hold|loom|braid|fabric|core|coreloom|volume   default hopf (CLI; make demo is gradient)
   --headless                 init_headless (frames default from preset)
   --frames N                 exit after N presents (0 = unlimited windowed)
   --width N  --height N      swapchain / offscreen size
@@ -258,7 +269,7 @@ Scene scale (preset first, then overrides)
   --fibers N                 live centerlines (cap 16384)  [hopf; hold 8–16; loom unused]
   --fiber-samples N          points / fiber (cap 256)
   --particles N              GpuParticle 32 B (cap 8388608)
-  --orbs N                   draw_geodesic_orb instances (cap 65536)
+  --orbs N                   draw_geodesic_orb instances (cap 262144)
   --tube-radius F            live + VisualState (0.002…0.08)
   --multiply left|right      exp(θu)*q0 or q0*exp(θu)  (Model)
 
@@ -275,6 +286,7 @@ Loom sculpt (Model; not inner_cone mosaic / hull)
   --flux elliptic|hyperbolic  nested tori (default) or gated river-braid
   --lambda F                  phase lock 0…1 (default 0.15)
   --mosaic 1|2|2x2            independent chart tiles (default 1)
+  --planes N                 core-loom Z stack (default 4 smoke / 64 4090, cap 64)
 
 Dirty / present
   --dirty-particles          advance mote phase every frame (no hash skip)
@@ -310,6 +322,15 @@ Loom (--grid = N×N Cartesian cells; live = latitude stitches, not N²)
   Enable cells near θ=π/4, π/2, 3π/4; inverse-Hopf each to a tube.
   Cartesian warp/weft is the faint static frame. --dirty-fibers grows
   outer needles first, then the trunk, and rotates φ on the chart.
+
+Core (spheres only; rings hidden)
+  smoke     8×8×4     1280x720
+  4090      64×64×64  1920x1080  packed ocean manifold
+  --planes N          Z stack (cap 64). Frame follows grid, not orb scale.
+  Class I icosahedral geodesic polyhedra (T=n², F=20n², V=10T+2, E=30T).
+  Default 2v → 80 triangular faces on a 64×64×64 lattice. Ocean manifold:
+  displacement travels +k, colour gradient travels −k. Inner alpha > 0.5,
+  outer alpha < 0.5. RGB geodesic shells still bounce in the volume.
 
 Default with no flags: windowed --preset 4090 until Esc.
 Unknown flags are an error (exit 2).
@@ -378,6 +399,7 @@ where
     let mut flux = Flux::Elliptic;
     let mut lambda: Option<f32> = None;
     let mut mosaic: Option<u32> = None;
+    let mut planes: Option<u32> = None;
 
     let mut it = argv.into_iter().map(|s| s.as_ref().to_string());
     while let Some(a) = it.next() {
@@ -464,11 +486,12 @@ where
                     return Err(2);
                 };
                 scene = Scene::parse(&v).ok_or_else(|| {
-                    eprintln!("unknown scene {v} (hopf|sculpture|gradient|ngsm|hold|loom|braid|fabric)");
+                    eprintln!("unknown scene {v} (hopf|sculpture|gradient|ngsm|hold|loom|braid|fabric|core|coreloom|volume)");
                     2
                 })?;
             }
             "--grid" => grid = Some(take_u32("--grid", &mut it)?),
+            "--planes" => planes = Some(take_u32("--planes", &mut it)?),
             "--cell-extent" => cell_extent = Some(take_f32("--cell-extent", &mut it)?),
             "--orb-scale" => orb_scale = Some(take_f32("--orb-scale", &mut it)?),
             "--ring-radius" => ring_radius = Some(take_f32("--ring-radius", &mut it)?),
@@ -563,6 +586,31 @@ where
         particles = particles_opt.unwrap_or(16_384);
     }
 
+    if scene == Scene::Core {
+        let (n_grid, n_planes, n_samples) = match preset {
+            Preset::Smoke => (8, 4, 32),
+            Preset::RingQga => (16, 8, 48),
+            Preset::FourK90 => (64, 64, 48),
+            Preset::Soak => (64, 64, 64),
+        };
+        grid = grid_opt.unwrap_or(n_grid);
+        fiber_samples = if fiber_samples == seed.samples {
+            n_samples
+        } else {
+            fiber_samples
+        };
+        fibers = 0;
+        let n_planes = planes.unwrap_or(n_planes).clamp(1, PLANES_CAP);
+        orbs = grid.saturating_mul(grid).saturating_mul(n_planes);
+        dirty_particles = false;
+        dirty_fibers = false;
+        dirty_rings = false;
+        glow = glow_flag.unwrap_or(false);
+        tube_radius = tube_radius_opt.unwrap_or(ring_tube);
+        particles = particles_opt.unwrap_or(0);
+        planes = Some(n_planes);
+    }
+
     if scene == Scene::Loom {
         let (n_grid, n_motes, tube) = match preset {
             Preset::Smoke => (16, 4_096, 0.016),
@@ -602,7 +650,7 @@ where
     }
     if fluid {
         dirty_particles = true;
-        if scene != Scene::Loom {
+        if scene != Scene::Loom && scene != Scene::Core {
             dirty_rings = true;
             let side = (grid.saturating_mul(8)).clamp(32, 256);
             particles = particles_opt.unwrap_or(side.saturating_mul(side));
@@ -611,9 +659,10 @@ where
         particles = 4 * grid.saturating_mul(grid);
     }
 
-    // Loom orbits so the nested tori read as a 3D object. Hopf records crane.
+    // Loom orbits so the nested tori read as a 3D object. Hopf / core records crane.
     // Gradient stays locked (sheet silhouette).
-    let cinematic = scene == Scene::Loom || (record.is_some() && scene == Scene::Hopf);
+    let cinematic = scene == Scene::Loom
+        || (record.is_some() && matches!(scene, Scene::Hopf | Scene::Core));
     if record.is_some() {
         headless = true;
         if no_capture {
@@ -638,7 +687,7 @@ where
         Capture::None
     };
 
-    if matches!(scene, Scene::Gradient | Scene::Hold) && grid > GRID_CAP {
+    if matches!(scene, Scene::Gradient | Scene::Hold | Scene::Core) && grid > GRID_CAP {
         eprintln!("grid {grid} exceeds cap {GRID_CAP}");
         return Err(2);
     }
@@ -648,6 +697,18 @@ where
     }
     let mosaic = mosaic.unwrap_or(1).clamp(1, 4);
     let lambda = lambda.unwrap_or(0.15).clamp(0.0, 1.0);
+    let planes = if scene == Scene::Core {
+        planes.unwrap_or(8).clamp(1, PLANES_CAP)
+    } else {
+        planes.unwrap_or(0)
+    };
+    if scene == Scene::Core {
+        let n_orbs = grid.saturating_mul(grid).saturating_mul(planes);
+        if n_orbs > ORB_CAP {
+            eprintln!("core orbs {n_orbs} exceeds cap {ORB_CAP} (grid² × planes)");
+            return Err(2);
+        }
+    }
     let live_fibers = if scene == Scene::Loom {
         grid.saturating_mul(grid).saturating_mul(mosaic.saturating_mul(mosaic))
     } else {
@@ -686,7 +747,7 @@ where
     }
 
     let json = json.unwrap_or_else(|| {
-        let name = if matches!(scene, Scene::Gradient | Scene::Hold | Scene::Loom) {
+        let name = if matches!(scene, Scene::Gradient | Scene::Hold | Scene::Loom | Scene::Core) {
             format!("{}-{}-{}.json", scene.as_str(), preset.as_str(), n_frames)
         } else {
             format!("{}-{}.json", preset.as_str(), n_frames)
@@ -725,6 +786,7 @@ where
         flux,
         lambda,
         mosaic,
+        planes,
     })
 }
 
@@ -1071,5 +1133,61 @@ mod tests {
                 "benchmarks/results/qga-gpu-bench-loom-4090.mp4"
             ))
         );
+    }
+
+    #[test]
+    fn core_4090_is_stacked_lattice() {
+        let a = parse_from([
+            "--headless",
+            "--scene",
+            "core",
+            "--preset",
+            "4090",
+            "--frames",
+            "60",
+            "--no-capture",
+        ])
+        .unwrap();
+        assert_eq!(a.scene, Scene::Core);
+        assert_eq!(a.grid, 64);
+        assert_eq!(a.planes, 64);
+        assert_eq!(a.orbs, 64 * 64 * 64);
+        assert_eq!(a.fibers, 0);
+        assert_eq!(a.particles, 0);
+        assert!(!a.dirty_particles && !a.dirty_fibers && !a.dirty_rings);
+        assert!(!a.glow);
+        assert_eq!(a.capture, Capture::None);
+        assert_eq!(a.frames, 60);
+    }
+
+    #[test]
+    fn core_aliases_and_planes_override() {
+        let a = parse_from([
+            "--scene",
+            "volume",
+            "--preset",
+            "smoke",
+            "--grid",
+            "6",
+            "--planes",
+            "3",
+        ])
+        .unwrap();
+        assert_eq!(a.scene, Scene::Core);
+        assert_eq!(a.grid, 6);
+        assert_eq!(a.planes, 3);
+        assert_eq!(a.orbs, 6 * 6 * 3);
+        assert_eq!(a.particles, 0);
+        assert_eq!(a.fibers, 0);
+    }
+
+    #[test]
+    fn coreloom_alias() {
+        let a = parse_from(["--scene", "coreloom", "--preset", "smoke"]).unwrap();
+        assert_eq!(a.scene, Scene::Core);
+        assert_eq!(a.grid, 8);
+        assert_eq!(a.planes, 4);
+        assert_eq!(a.orbs, 8 * 8 * 4);
+        assert_eq!(a.fibers, 0);
     }
 }

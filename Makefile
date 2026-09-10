@@ -1,4 +1,4 @@
-.PHONY: check test demo demo-tiny demo-headless headless ring ring-windowed bench bench-windowed bench-smoke bench-record bench-gradient bench-gradient-windowed bench-gradient-record bench-hold bench-hold-record bench-loom bench-loom-windowed bench-loom-record bench-loom-smoke
+.PHONY: check test demo demo-tiny demo-headless headless ring ring-windowed bench bench-windowed bench-smoke bench-record bench-gradient bench-gradient-windowed bench-gradient-record bench-hold bench-hold-record bench-loom bench-loom-windowed bench-loom-record bench-loom-smoke bench-core bench-core-windowed
 
 check:
 	cargo check --workspace
@@ -83,3 +83,11 @@ bench-loom-windowed:
 	cargo run -p qga-gpu-bench --release -- --scene loom --preset 4090 --flux elliptic --lambda 0.15 --mosaic 1 --dirty-particles --dirty-fibers --frames 900 --record benchmarks/results/qga-gpu-bench-loom-4090.mp4
 
 bench-loom-record: bench-loom-windowed
+
+# Coincident-addressed stacked lattice. Static topology once; one core
+# live-written per pulse. Sense N_sk next to UploadStats. Model, not a chip.
+bench-core:
+	cargo run -p qga-gpu-bench --release -- --scene core --preset 4090 --frames 60 --headless --no-capture
+
+bench-core-windowed:
+	cargo run -p qga-gpu-bench --release -- --scene core --preset 4090

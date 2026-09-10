@@ -226,7 +226,7 @@ const LINE_ATTRS: [wgpu::VertexAttribute; 2] = [
         shader_location: 1,
     },
 ];
-const ORB_INST_ATTRS: [wgpu::VertexAttribute; 3] = [
+const ORB_INST_ATTRS: [wgpu::VertexAttribute; 4] = [
     wgpu::VertexAttribute {
         format: wgpu::VertexFormat::Float32x3,
         offset: 0,
@@ -241,6 +241,11 @@ const ORB_INST_ATTRS: [wgpu::VertexAttribute; 3] = [
         format: wgpu::VertexFormat::Float32x3,
         offset: 16,
         shader_location: 5,
+    },
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32,
+        offset: 28,
+        shader_location: 7,
     },
 ];
 const QUAD_ATTRS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
@@ -706,8 +711,23 @@ impl Renderer {
     }
 
     pub fn draw_geodesic_orb(&mut self, transform: glam::Mat4, color: glam::Vec3, lod: u32) {
-        self.geo_queue
-            .push(GpuOrbInstance::from_transform(transform, color, lod));
+        let mut inst = GpuOrbInstance::from_transform(transform, color, lod);
+        if inst.lod < 1e-4 {
+            inst.lod = 1.0;
+        }
+        self.geo_queue.push(inst);
+    }
+
+    /// Same instance slot; `lod` carries per-instance alpha in (0, 1].
+    pub fn draw_geodesic_orb_alpha(
+        &mut self,
+        transform: glam::Mat4,
+        color: glam::Vec3,
+        alpha: f32,
+    ) {
+        let mut inst = GpuOrbInstance::from_transform(transform, color, 1);
+        inst.lod = alpha.clamp(0.02, 1.0);
+        self.geo_queue.push(inst);
     }
 
     fn write_fiber_slot(
@@ -1004,6 +1024,8 @@ impl Renderer {
                 &mut self.stats,
             );
             self.geo_count = inst.len() as u32;
+        } else {
+            self.geo_count = 0;
         }
 
         let uniforms = FrameUniforms::new(

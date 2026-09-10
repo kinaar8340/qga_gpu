@@ -87,7 +87,7 @@ is sized for this box (`--grid 64 --fluid` → 4096 speakers + 65 536 motes).
 ```
 crates/qga-gpu         library (WGSL in crates/qga-gpu/src/shaders/)
 crates/qga-gpu-demo    4k sculpture smoke (`make demo-tiny`)
-crates/qga-gpu-bench   public 65k ocean + Hopf / hold / loom bench
+crates/qga-gpu-bench   public 65k ocean + Hopf / hold / loom / core-loom bench
 ```
 
 Extracted from `qga_engine/crates/qga-gpu` and the inner_cone upload path.
@@ -113,6 +113,8 @@ make bench-hold-record       # hold, in-sheet 1440p encode (no HUD)
 make bench-loom-smoke        # inverse-Hopf loom, 60 frames, no capture
 make bench-loom              # 4090 loom, 60 headless frames, no capture
 make bench-loom-windowed     # 4090 loom, 900 frames, cinematic --record
+make bench-core              # 64×64×64 ocean manifold, 60 headless
+make bench-core-windowed     # 64×64×64, green frame, until Esc
 ```
 
 `--frames N` exits after N presents (windowed or headless). `--frames 0` is
@@ -132,6 +134,7 @@ Scenes:
 | `gradient` / `ngsm` | `make demo` | Lattice of instanced orbs + one thin ring per cell. **Model**: ngsm “gradient / structure”; rainbow ocean and ring tilts from a Stokes-skyrmion-like field (Chen et al. 2026; Kinder arXiv:2607.16520). Not a p5.js port and not those papers’ data. `--fluid` adds the 65 536-particle bed. |
 | `hold` | `make bench-hold` | Frozen fiber lattice + two cones + separator torus. **Model**. Static topology once; 8–16 live tubes and 16k motes pulse every 30 frames; `aperture` / `height_scale` / `zener` / `time` breathe the rest. Camera sits in the sheet (not a bird’s-eye). `make bench-hold-record` is grid 64, 1440p, no HUD. Shows the hash-skip path the 65k ocean never prints. |
 | `loom` / `braid` / `fabric` | `make bench-loom` | Cartesian N×N warp/weft (static) + cells on three S² latitudes inverse-Hopf to nested tori (live) + particle fill. **Model**: sculpt the chart by which cells are on and (θ,φ,ψ); do not upload 2D squiggles. `--flux elliptic` (default), `--lambda`, `--mosaic`. `--dirty-fibers` grows needles first. Not a fabricated silica loom. |
+| `core` / `coreloom` / `volume` | `make bench-core` | 64×64×64 packed lattice. **Model**: ocean manifold (displacement \(+\mathbf{k}\), colour gradient \(-\mathbf{k}\)); inner alpha \(>0.5\), outer \(<0.5\). Class I icosahedral geodesic polyhedra (\(T=n^2\), \(F=20n^2\), default 2v → 80 faces) bounce as RGB shells. Green `#00FF00` frame follows grid resolution, not orb density. |
 
 `make demo` is the public 65k scene. `make ring` is the 4k dirty-particle
 smoke. Hopf bench is a different scale: observer sphere + cyan/orange cones +
@@ -151,6 +154,8 @@ make bench-hold-record        # --grid 64 1440p in-sheet → mp4 (capture Wait; 
 make bench-loom-smoke         # warp=16 elliptic, 60 frames, no capture
 make bench-loom               # 4090 loom, 60 headless, no capture
 make bench-loom-windowed      # 4090, 900 frames, cinematic --record
+make bench-core               # 64×64×64 ocean manifold, 60 headless
+make bench-core-windowed      # same volume, until Esc
 ./benchmarks/run.sh           # smoke then hopf 4090 --no-capture; JSON under benchmarks/results/
 ```
 
@@ -265,6 +270,7 @@ Renderer::retain_static_fibers
 Renderer::write_live_fibers      // no-op if topology hash + tube_radius unchanged
 Renderer::retain_meshes          // sphere/cone/torus tessellated once
 Renderer::draw_geodesic_orb(transform, color, lod)
+Renderer::draw_geodesic_orb_alpha(transform, color, alpha)
 Renderer::upload_hubs
 Renderer::write_particles        // staging ring; skip if bytes unchanged
 Renderer::write_hud

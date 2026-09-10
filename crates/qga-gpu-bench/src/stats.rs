@@ -239,6 +239,17 @@ pub fn print_report(
             args.fiber_samples,
             args.particles
         ),
+        Scene::Core => println!(
+            "done scene=core preset={} frames={frames} {}x{} grid={} planes={} live={} samples={} particles={}",
+            args.preset.as_str(),
+            args.width,
+            args.height,
+            args.grid,
+            args.planes,
+            args.fibers,
+            args.fiber_samples,
+            args.particles
+        ),
     }
     println!(
         "ms_mean={mean:.3} ms_min={min:.3} ms_max={max:.3} hz={hz:.1} wall_ms={wall:.1} capture_bytes={last_bytes}"
