@@ -13,26 +13,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: test
         run: cargo test -p qga-gpu
 
-  smoke:
-    name: headless smoke
+  headless:
+    name: headless UploadStats (tiny sculpture)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: mesa
+      - uses: Swatinem/rust-cache@v2
+      - name: mesa vulkan
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
-      - name: demo-tiny headless
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers vulkan-tools
+      - name: make headless
         run: |
-          if ! vulkaninfo >/dev/null 2>&1 && ! ls /dev/dri >/dev/null 2>&1; then
-            echo "no Vulkan adapter; skipping GPU smoke"
+          set -o pipefail
+          if ! vulkaninfo --summary >/dev/null 2>&1; then
+            echo "no Vulkan adapter; skipping GPU smoke (not a test failure)"
             exit 0
           fi
-          cargo run -p qga-gpu-demo --release -- --headless --frames 8 || {
-            echo "GPU smoke failed or no adapter; skipping"
-            exit 0
+          out=$(cargo run -p qga-gpu-demo --release -- --headless --frames 8 2>&1 | tee /dev/stderr) || {
+            echo "$out" | grep -qi 'no Vulkan adapter' && {
+              echo "wgpu found no adapter; skipping GPU smoke"
+              exit 0
+            }
+            exit 1
           }
+          echo "$out" | grep -q 'static_uploads=1' \
+            || {
+              echo "headless ran but did not print UploadStats static_uploads=1"
+              exit 1
+            }
