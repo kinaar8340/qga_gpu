@@ -1,4 +1,4 @@
-//! Hardware-tuned defaults for the 3900X + RTX 4090 development box.
+//! Hardware profiles. Lab (4090) is one target, not the only box.
 
 #[derive(Clone, Copy, Debug)]
 pub struct HardwareProfile {
@@ -12,9 +12,10 @@ pub struct HardwareProfile {
 }
 
 impl HardwareProfile {
-    /// This machine: Ryzen 9 3900X (24 threads) + RTX 4090 24 GiB.
-    pub const THIS_BOX: Self = Self {
-        name: "RTX 4090 + Ryzen 9 3900X",
+    /// Lab target: Ryzen 9 3900X (24 threads) + RTX 4090 24 GiB.
+    /// Not the laptop demo and not CI.
+    pub const LAB_4090: Self = Self {
+        name: "lab: RTX 4090 + Ryzen 9 3900X",
         cpu_threads: 24,
         vram_mib: 24564,
         default_fibers: 256,

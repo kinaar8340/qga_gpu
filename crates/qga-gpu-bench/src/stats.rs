@@ -257,7 +257,7 @@ pub fn print_report(
     println!(
         "write_buffer={wb} ring_copies={rc} static_uploads={su} live_fiber_writes={lw} static_skipped={ss} live_skipped={ls} particle_skipped={ps} particle_grows={pg} particle_fallbacks={pf} fiber_reallocs={fr}"
     );
-    println!("claims=Software fact  not_a_proof_of=inner_cone mosaic / qga-app cosmos");
+    qga_gpu::print_claim_banner("inner_cone mosaic / qga-app cosmos");
 }
 
 pub fn record(

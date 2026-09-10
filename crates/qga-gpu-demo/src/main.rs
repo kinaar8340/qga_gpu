@@ -85,6 +85,7 @@ fn report_stats(
     println!(
         "done frames={frames} capture_bytes={last_bytes} write_buffer={wb} ring_copies={rc} static_uploads={su} static_skipped={ss} live_skipped={ls} particle_skipped={ps} particle_grows={pg} particle_fallbacks={pf}"
     );
+    qga_gpu::print_claim_banner("inner_cone mosaic / qga-app cosmos");
     anyhow::ensure!(
         su == 1,
         "static fiber buffers were written {su} times; expected static_uploads == 1"

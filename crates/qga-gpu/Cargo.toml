@@ -14,9 +14,8 @@ winit = ["dep:winit", "dep:pollster"]
 headless = ["dep:pollster"]
 capture = []
 glow = []
-# From<&qga_math::Fiber> for GpuFiber. Off by default so the demo has no
-# path to qga_engine. Enable only in a workspace that also provides qga-math.
-qga-math = ["dep:qga-math"]
+# Fiber conversion lives in the consumer (inner_cone geometry::gpu_fiber).
+# Do not path-dep a sibling qga_engine checkout.
 
 [dependencies]
 glam.workspace = true
@@ -26,4 +25,3 @@ anyhow.workspace = true
 log.workspace = true
 pollster = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
-qga-math = { path = "../../../qga_engine/crates/qga-math", optional = true }

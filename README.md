@@ -2,11 +2,17 @@
 
 # qga-gpu
 
+Spine: [`qga`](https://github.com/kinaar8340/qga) — manuscript + pedagogical Python  
+Shared math: [`flux_hopf_lib`](https://github.com/kinaar8340/flux_hopf_lib)  
+Engine: [`qga_engine`](https://github.com/kinaar8340/qga_engine) (scenes, Rust math) · this repo (frame)  
+This repo: wgpu/Vulkan frame, pipelines, upload stats. Not world meaning.
+
 wgpu/Vulkan renderer. **This crate owns the frame.** Geometry meaning lives in
 [`qga_engine`](https://github.com/kinaar8340/qga_engine) (`qga-math` / `qga-sim`
 / `qga-app`) and the manuscript [`qga`](https://github.com/kinaar8340/qga).
 
 Renderer claims are **Software fact**. Geometry in the public demo is **Model**.
+Binaries print `claims=Software fact` via `qga_gpu::print_claim_banner`.
 
 ## Ten minutes
 
@@ -51,10 +57,9 @@ Those counters prove **this crate’s** upload path. They do **not** prove
 `inner_cone` mosaic/hull or `qga-app` cosmos. `inner_cone` does not print
 `UploadStats`. Neither does `qga-app --headless`.
 
-The public demo has **no path to `qga_engine`**. Optional `--features qga-math`
-on `qga-gpu` adds `From<&qga_math::Fiber>` and needs a local engine checkout.
-Do **not** turn that feature on for `inner_cone`: fiber conversion stays in
-`geometry::gpu_fiber`.
+The public demo has **no path to `qga_engine`**. Fiber conversion stays in
+the consumer (`inner_cone` `geometry::gpu_fiber`). There is no sibling
+`qga-math` path dep.
 
 ## Pin this crate
 
@@ -71,7 +76,17 @@ is. GPU `main` (`5937219`) is after that pin. This extract does **not**
 open a pin-bump PR. `inner_cone` @ `03e1fb2` is a path dep.
 See [MIGRATION.md](MIGRATION.md).
 
-## Hardware target (this machine)
+## Hardware targets
+
+Three targets. The 4090 table is the **lab**, not “this box.”
+
+| Target | What to run | Notes |
+|--------|-------------|--------|
+| Laptop demo | `make demo-tiny` | 1 sphere + 2 cones + 4k particles |
+| 4090 lab | `make demo` / `make bench*` | 64×64 speakers + 65 536 motes; counters below |
+| Headless CI | `make demo-headless` / `make demo-tiny --headless` | Skip if no Vulkan adapter |
+
+**Lab (4090)**
 
 | | |
 |---|---|
@@ -80,7 +95,7 @@ See [MIGRATION.md](MIGRATION.md).
 | OS | Ubuntu, GNOME, **Wayland** |
 
 Vulkan through `wgpu` only. No OpenGL. CUDA is out of scope for v0. `make demo`
-is sized for this box (`--grid 64 --fluid` → 4096 speakers + 65 536 motes).
+is sized for the lab (`--grid 64 --fluid` → 4096 speakers + 65 536 motes).
 
 ## Workspace
 
@@ -285,7 +300,6 @@ Renderer::render(gpu, cam, vis, t, capture)
 | `headless` | no | pollster; `init_headless` |
 | `capture` | no | BGRA readback |
 | `glow` | no | 9-tap bloom + Reinhard |
-| `qga-math` | no | `From` impls for `qga_math::Fiber` |
 
 ## Records
 
@@ -318,9 +332,9 @@ Software fact:
 
 | Repo | Role |
 |------|------|
-| [`qga_engine`](https://github.com/kinaar8340/qga_engine) | Scenes, math, sim. Git-depends on this crate. `main` @ `cd5081a`, pin `rev = "f263ea7"` |
-| [`qga`](https://github.com/kinaar8340/qga) | Manuscript + Python lib (source of math) |
-| `inner_cone` | Sculpture viewer; path-depends here (`03e1fb2`) |
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) | Scenes, math, sim. Pin this crate by git tag, never `main`. |
+| [`qga`](https://github.com/kinaar8340/qga) | Manuscript + pedagogical Python |
+| `inner_cone` | Sculpture viewer (Model). Pin this crate by git tag. |
 
 ## What this crate is not
 
@@ -332,4 +346,4 @@ See [DESIGN.md](DESIGN.md) and [MIGRATION.md](MIGRATION.md).
 
 ## License
 
-MIT — same ecosystem as qga / qga_engine / inner_cone.
+Geometry libraries are MIT. Several VQC repos are PolyForm Noncommercial plus patent notice US 63/913,110. This repo is MIT.

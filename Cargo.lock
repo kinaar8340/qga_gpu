@@ -1338,7 +1338,6 @@ dependencies = [
  "glam",
  "log",
  "pollster",
- "qga-math",
  "wgpu",
  "winit",
 ]
@@ -1369,13 +1368,6 @@ dependencies = [
  "pollster",
  "qga-gpu",
  "winit",
-]
-
-[[package]]
-name = "qga-math"
-version = "0.1.0"
-dependencies = [
- "glam",
 ]
 
 [[package]]

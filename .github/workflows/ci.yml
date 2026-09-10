@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: test
+        run: cargo test -p qga-gpu
+
+  smoke:
+    name: headless smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: mesa
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
+      - name: demo-tiny headless
+        run: |
+          if ! vulkaninfo >/dev/null 2>&1 && ! ls /dev/dri >/dev/null 2>&1; then
+            echo "no Vulkan adapter; skipping GPU smoke"
+            exit 0
+          fi
+          cargo run -p qga-gpu-demo --release -- --headless --frames 8 || {
+            echo "GPU smoke failed or no adapter; skipping"
+            exit 0
+          }

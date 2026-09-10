@@ -32,7 +32,7 @@ impl Default for VisualState {
             glow: 1.15,
             pulse: 0.55,
             flux_speed: 1.0,
-            tube_radius: HardwareProfile::THIS_BOX.tube_radius,
+            tube_radius: HardwareProfile::LAB_4090.tube_radius,
             paused: false,
             show_rings: true,
             aperture: 1.0,
