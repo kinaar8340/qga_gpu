@@ -1170,9 +1170,10 @@ the strategy you want.
 - Claiming the Z-map or 350/π as theorems inside the renderer.
 - Vendoring all of `qga-math`.
 
-Consumer wiring: [MIGRATION.md](MIGRATION.md). `inner_cone` @ `03e1fb2`
-path-depends with `features = ["capture"]` only. [`qga_engine`](https://github.com/kinaar8340/qga_engine)
-@ `cd5081a` git-depends with `rev = "f263ea7"` (`Cargo.lock` is not the pin). Do not
+Consumer wiring: [MIGRATION.md](MIGRATION.md). `inner_cone` @ `89a890c`
+git-pins `qga_engine@7e7866b` + `qga_gpu@b9c9994` (`features = ["capture"]`).
+[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `7e7866b` git-depends
+with `rev = "b9c9994"` (`Cargo.lock` is not the pin). No `v0.1.0`. Do not
 enable `qga-math` on this crate for those callers.
 
 ## Claim labels

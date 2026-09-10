@@ -53,15 +53,13 @@ default = ["winit"]
 winit, headless, capture, glow, qga-math (optional From; not default)
 
 ## Consumers (v0)
-inner_cone @ 03e1fb2: path ../qga_gpu/crates/qga-gpu, features = ["capture"].
+inner_cone @ 89a890c: git qga_engine@7e7866b + qga_gpu@b9c9994, features = ["capture"].
 Fiber conversion in geometry::gpu_fiber. Do not enable qga-math on this crate.
-qga_engine @ cd5081a (https://github.com/kinaar8340/qga_engine): git dep,
-rev = "f263ea7". Features winit/headless/capture/glow. Fiber conversion
-in qga-app::convert. Cosmos default 262144 (cap 524288); realm 128x128
+qga_engine @ 7e7866b: git dep, rev = "b9c9994". Features winit/headless/capture/glow.
+Fiber conversion in qga-app::convert. Cosmos default 262144 (cap 524288); realm 128x128
 fibers, 256^2 terrain. Scenes/CLI/controls live in that README and
 docs/SCENES.md. Do not copy them here. Cargo.lock is not the pin; the
-workspace rev is. GPU main (5937219) is after f263ea7. This extract does
-not PR a pin change.
+workspace rev is. No v0.1.0. Do not bump this sha from a README commit.
 Public demo: make demo is qga-gpu-bench --scene gradient --preset 4090
 --grid 64 --fluid (4096 speakers + 65536 particles, until Esc, UploadStats
 on exit). make demo-tiny / make ring stay 4k smoke. make bench-hold is

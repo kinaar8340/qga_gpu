@@ -1,16 +1,17 @@
 # Consumer wiring
 
 This repo is the extracted renderer. Do **not** edit `qga_engine` or
-`inner_cone` from this extract. Local `inner_cone` `03e1fb2` is the contract
-if GitHub still shows `73de02d`. [`qga_engine`](https://github.com/kinaar8340/qga_engine)
-is a git repo on `main` at `cd5081a`.
+`inner_cone` from this extract. [`inner_cone`](https://github.com/kinaar8340/inner_cone)
+@ `89a890c` git-pins `qga_engine@7e7866b` + `qga_gpu@b9c9994`.
+[`qga_engine`](https://github.com/kinaar8340/qga_engine) visual tip is `7e7866b`.
+No `v0.1.0` tags. Do not float `main`.
 
 ## Status (Software fact)
 
 | Consumer | Form | Features | Fiber conversion |
 |----------|------|----------|------------------|
-| `inner_cone` @ `03e1fb2` | `path = "../qga_gpu/crates/qga-gpu"` | `["capture"]` | `geometry::gpu_fiber` |
-| `qga_engine` (`qga-app`) @ `cd5081a` | git, `rev = "f263ea7"` | `winit`, `headless`, `capture`, `glow` | `qga-app::convert` |
+| `inner_cone` @ `89a890c` | git `qga_engine@7e7866b` + `qga_gpu@b9c9994` | `["capture"]` | `geometry::gpu_fiber` |
+| `qga_engine` (`qga-app`) @ `7e7866b` | git, `rev = "b9c9994"` | `winit`, `headless`, `capture`, `glow` | `qga-app::convert` |
 
 `qga-math` / `qga-sim` stay in the engine workspace. Do **not** enable
 `qga-gpu/qga-math` on either consumer: the renderer must not take a default
@@ -18,24 +19,16 @@ math dep.
 
 ## inner_cone
 
-Switched. Working dep while sibling checkouts drift:
+Git consumer (`89a890c`). Not a sibling path:
 
 ```toml
-qga-math = { path = "../qga_engine/crates/qga-math" }
-qga-sim  = { path = "../qga_engine/crates/qga-sim" }
-qga-gpu  = { path = "../qga_gpu/crates/qga-gpu", features = ["capture"] }
+qga-math = { git = "https://github.com/kinaar8340/qga_engine", rev = "7e7866bb2611d4ab35e6e3c1f46a3f8dd9b4320d" }
+qga-sim  = { git = "https://github.com/kinaar8340/qga_engine", rev = "7e7866bb2611d4ab35e6e3c1f46a3f8dd9b4320d" }
+qga-gpu  = { git = "https://github.com/kinaar8340/qga_gpu", rev = "b9c999406e266a585769a4804c6968de0e6d2237", features = ["capture"] }
 ```
 
-That is **not** `../qga_engine/crates/qga-gpu`. `capture` is the right local
-set for `--export` / F12. `winit` is this crate’s default; `glow` is optional
-bloom the demo can drive through `VisualState` either way.
-
-If that repo later uses the git form, pin a sha and add `winit` / `headless`
-/ `glow` only where that binary actually needs them:
-
-```toml
-qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "<sha>", features = ["winit", "headless", "capture", "glow"] }
-```
+`capture` is the right feature set for `--export` / F12. `winit` is this
+crate’s default; `glow` is optional bloom.
 
 `inner_cone` has no headless binary. `--export --frames N` is the windowed
 stand-in and does not print or assert `UploadStats`. Until it does (print
@@ -57,21 +50,19 @@ reveal — those binaries still do not print `UploadStats`.
 
 ## qga_engine
 
-Published: [`kinaar8340/qga_engine`](https://github.com/kinaar8340/qga_engine),
-`main` @ `cd5081a`. In-tree `crates/qga-gpu` is gone. Workspace dep:
+Published: [`kinaar8340/qga_engine`](https://github.com/kinaar8340/qga_engine)
+@ `7e7866b`. In-tree `crates/qga-gpu` is gone. Workspace dep:
 
 ```toml
 # qga_engine/Cargo.toml workspace.dependencies
-qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "f263ea7", features = ["winit", "headless", "capture", "glow"] }
+qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "b9c999406e266a585769a4804c6968de0e6d2237", features = ["winit", "headless", "capture", "glow"] }
 ```
 
-The pin is workspace `rev = "f263ea7"`. `Cargo.lock` is a lockfile, not the
-contract. GPU `main` (`5937219`) is after that pin. This extract does not
-PR a bump. A push to this repo’s `main` can still change record layout or
-feature defaults while `inner_cone`’s path dep stays frozen to the sibling
-tree. Path-dep drift on `inner_cone` remains.
+The pin is workspace `rev = "b9c9994"`. `Cargo.lock` is a lockfile, not the
+contract. Do not bump this sha from a README commit. `inner_cone` git-pins
+the same two revs. No `v0.1.0`.
 
-Engine docs at `cd5081a` (README, DESIGN, AGENTS, Makefile, `docs/SCENES.md`)
+Engine docs at `7e7866b` (README, DESIGN, AGENTS, Makefile, `docs/SCENES.md`)
 match this split: this crate owns the frame; `qga-app` owns lab / realm /
 cosmos / oam / reveal. Software fact of that tree: cosmos default 262 144
 bodies (cap 524 288), realm 128 × 128 fibers and 256² terrain. Palettes

@@ -63,18 +63,19 @@ the consumer (`inner_cone` `geometry::gpu_fiber`). There is no sibling
 
 ## Pin this crate
 
-A stranger should pin a published sha, not float `main`:
+A stranger should pin a published sha, not float `main`. There is no
+`v0.1.0` tag.
 
 ```toml
-qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "<published sha>" }
+qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "b9c999406e266a585769a4804c6968de0e6d2237" }
 ```
 
-[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `cd5081a`
-git-depends with `rev = "f263ea7"` (`features = ["winit", "headless",
+[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `7e7866b`
+git-depends with `rev = "b9c9994"` (`features = ["winit", "headless",
 "capture", "glow"]`). `Cargo.lock` is not the pin; the workspace `rev`
-is. GPU `main` (`5937219`) is after that pin. This extract does **not**
-open a pin-bump PR. `inner_cone` @ `03e1fb2` is a path dep.
-See [MIGRATION.md](MIGRATION.md).
+is. [`inner_cone`](https://github.com/kinaar8340/inner_cone) @ `89a890c`
+is a **git** consumer of `qga_engine@7e7866b` + this sha (`features =
+["capture"]`). No sibling `../` path. See [MIGRATION.md](MIGRATION.md).
 
 ## Hardware targets
 
@@ -192,25 +193,20 @@ ring slot unless windowed fallbacks exceed ~1%.
 
 ## Consumers
 
-Software fact. Local `inner_cone` `03e1fb2` is the contract if GitHub still
-shows `73de02d`. Engine snapshot: `main` @ `cd5081a`, pin `rev = "f263ea7"`.
+Software fact. Pin `b9c9994`. Engine visual tip `7e7866b`. No `v0.1.0`.
 
 | Consumer | Dep | Not in this extract |
 |----------|-----|---------------------|
-| stranger / other crate | `qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "<sha>" }` | pin a published sha; do not float `main` |
-| `inner_cone` | `qga-gpu = { path = "../qga_gpu/crates/qga-gpu", features = ["capture"] }` | do not edit inner_cone here; it does not print `UploadStats` |
-| [`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `cd5081a` | git, `rev = "f263ea7"`; `features = ["winit", "headless", "capture", "glow"]` | do not PR a pin bump from this extract |
+| stranger / other crate | `qga-gpu = { git = "…/qga_gpu", rev = "b9c9994…" }` | pin that sha; do not float `main`; no tag yet |
+| [`inner_cone`](https://github.com/kinaar8340/inner_cone) @ `89a890c` | git, `qga_engine@7e7866b` + `qga_gpu@b9c9994`, `features = ["capture"]` | git consumer, not a path dep; does not print `UploadStats` |
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `7e7866b` | git, `rev = "b9c9994"`; `features = ["winit", "headless", "capture", "glow"]` | do not PR a pin bump from this extract |
 
-`capture` is the right local set for `inner_cone --export`. A `qga_gpu` `main`
-push can change record layout or feature defaults while `inner_cone`’s path
-dep stays frozen to the sibling tree. The published pin is workspace
-`rev = "f263ea7"`, not `Cargo.lock`. GPU `main` (`5937219`) is after that
-pin. This extract does not PR a bump. After that pin, a record-layout
-change here cannot silently land in the published consumer while
-`inner_cone` stays on the sibling path.
+`capture` is the right feature set for `inner_cone --export`. Record layout
+changes here cannot silently land in published consumers: they pin this sha,
+not `main`. `Cargo.lock` is not the pin.
 
 Engine scenes (lab / realm / cosmos / oam / reveal), CLI, and controls live
-in that repo’s README and `docs/SCENES.md`. Software fact of `cd5081a`:
+in that repo’s README and `docs/SCENES.md`. Software fact of `7e7866b`:
 cosmos default 262 144 bodies (cap 524 288), realm 128 × 128 fibers and
 256² terrain. Space on cosmos hides HUD tabs; it does not pause. This crate
 does not implement those scenes.
@@ -332,9 +328,9 @@ Software fact:
 
 | Repo | Role |
 |------|------|
-| [`qga_engine`](https://github.com/kinaar8340/qga_engine) | Scenes, math, sim. Pin this crate by git tag, never `main`. |
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) | Scenes, math, sim. Pin this crate by git rev (`b9c9994`), never `main`. No `v0.1.0`. |
 | [`qga`](https://github.com/kinaar8340/qga) | Manuscript + pedagogical Python |
-| `inner_cone` | Sculpture viewer (Model). Pin this crate by git tag. |
+| [`inner_cone`](https://github.com/kinaar8340/inner_cone) | Sculpture viewer (Model). Git-pins `qga_engine@7e7866b` + this sha. |
 
 ## What this crate is not
 
