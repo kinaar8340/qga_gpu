@@ -6,7 +6,7 @@ meaning lives in [`qga_engine`](https://github.com/kinaar8340/qga_engine)
 
 This is not the QGA engine, not a fantasy realm, and not a solar-nebula sim.
 Those scenes stay in [`qga_engine`](https://github.com/kinaar8340/qga_engine)
-(`main` @ `db5194e`) and `inner_cone`. This crate is the upload path and the
+(`main` @ `cd5081a`) and `inner_cone`. This crate is the upload path and the
 swapchain.
 
 ## Crate map
@@ -1172,7 +1172,7 @@ the strategy you want.
 
 Consumer wiring: [MIGRATION.md](MIGRATION.md). `inner_cone` @ `03e1fb2`
 path-depends with `features = ["capture"]` only. [`qga_engine`](https://github.com/kinaar8340/qga_engine)
-@ `db5194e` git-depends with no `rev` (`Cargo.lock` pins a sha). Do not
+@ `cd5081a` git-depends with `rev = "f263ea7"` (`Cargo.lock` is not the pin). Do not
 enable `qga-math` on this crate for those callers.
 
 ## Claim labels

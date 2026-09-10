@@ -3,14 +3,14 @@
 This repo is the extracted renderer. Do **not** edit `qga_engine` or
 `inner_cone` from this extract. Local `inner_cone` `03e1fb2` is the contract
 if GitHub still shows `73de02d`. [`qga_engine`](https://github.com/kinaar8340/qga_engine)
-is a git repo on `main` at `db5194e`.
+is a git repo on `main` at `cd5081a`.
 
 ## Status (Software fact)
 
 | Consumer | Form | Features | Fiber conversion |
 |----------|------|----------|------------------|
 | `inner_cone` @ `03e1fb2` | `path = "../qga_gpu/crates/qga-gpu"` | `["capture"]` | `geometry::gpu_fiber` |
-| `qga_engine` (`qga-app`) @ `db5194e` | git, **no `rev`** | `winit`, `headless`, `capture`, `glow` | `qga-app::convert` |
+| `qga_engine` (`qga-app`) @ `cd5081a` | git, `rev = "f263ea7"` | `winit`, `headless`, `capture`, `glow` | `qga-app::convert` |
 
 `qga-math` / `qga-sim` stay in the engine workspace. Do **not** enable
 `qga-gpu/qga-math` on either consumer: the renderer must not take a default
@@ -58,22 +58,20 @@ reveal — those binaries still do not print `UploadStats`.
 ## qga_engine
 
 Published: [`kinaar8340/qga_engine`](https://github.com/kinaar8340/qga_engine),
-`main` @ `db5194e`. In-tree `crates/qga-gpu` is gone. Workspace dep:
+`main` @ `cd5081a`. In-tree `crates/qga-gpu` is gone. Workspace dep:
 
 ```toml
 # qga_engine/Cargo.toml workspace.dependencies
-qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", features = ["winit", "headless", "capture", "glow"] }
+qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "f263ea7", features = ["winit", "headless", "capture", "glow"] }
 ```
 
-**Risk:** no `rev`. `Cargo.lock` pins a sha until the next `cargo update -p
-qga-gpu`. A push to this repo’s `main` can change record layout or feature
-defaults while `inner_cone`’s path dep stays frozen to the sibling tree.
-Leave this float as a written risk until `qga-app` pins
-`rev = "f263ea7"` (or the lock sha). After that, a record-layout change here
-cannot silently land in the published consumer while `inner_cone` stays on
-the sibling path.
+The pin is workspace `rev = "f263ea7"`. `Cargo.lock` is a lockfile, not the
+contract. GPU `main` (`5937219`) is after that pin. This extract does not
+PR a bump. A push to this repo’s `main` can still change record layout or
+feature defaults while `inner_cone`’s path dep stays frozen to the sibling
+tree. Path-dep drift on `inner_cone` remains.
 
-Engine docs at `db5194e` (README, DESIGN, AGENTS, Makefile, `docs/SCENES.md`)
+Engine docs at `cd5081a` (README, DESIGN, AGENTS, Makefile, `docs/SCENES.md`)
 match this split: this crate owns the frame; `qga-app` owns lab / realm /
 cosmos / oam / reveal. Software fact of that tree: cosmos default 262 144
 bodies (cap 524 288), realm 128 × 128 fibers and 256² terrain. Palettes

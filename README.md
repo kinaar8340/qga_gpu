@@ -64,9 +64,11 @@ A stranger should pin a published sha, not float `main`:
 qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "<published sha>" }
 ```
 
-[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` still
-git-depends with **no `rev`** (`Cargo.lock` pins a sha). This extract does
-**not** open a PR to add that pin. `inner_cone` @ `03e1fb2` is a path dep.
+[`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `cd5081a`
+git-depends with `rev = "f263ea7"` (`features = ["winit", "headless",
+"capture", "glow"]`). `Cargo.lock` is not the pin; the workspace `rev`
+is. GPU `main` (`5937219`) is after that pin. This extract does **not**
+open a pin-bump PR. `inner_cone` @ `03e1fb2` is a path dep.
 See [MIGRATION.md](MIGRATION.md).
 
 ## Hardware target (this machine)
@@ -171,23 +173,24 @@ ring slot unless windowed fallbacks exceed ~1%.
 ## Consumers
 
 Software fact. Local `inner_cone` `03e1fb2` is the contract if GitHub still
-shows `73de02d`. Engine snapshot: `main` @ `db5194e`.
+shows `73de02d`. Engine snapshot: `main` @ `cd5081a`, pin `rev = "f263ea7"`.
 
 | Consumer | Dep | Not in this extract |
 |----------|-----|---------------------|
 | stranger / other crate | `qga-gpu = { git = "https://github.com/kinaar8340/qga_gpu", rev = "<sha>" }` | pin a published sha; do not float `main` |
 | `inner_cone` | `qga-gpu = { path = "../qga_gpu/crates/qga-gpu", features = ["capture"] }` | do not edit inner_cone here; it does not print `UploadStats` |
-| [`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `db5194e` | git, **no `rev`** (lock pins sha); `features = ["winit", "headless", "capture", "glow"]` | do not PR the pin from this extract |
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) @ `cd5081a` | git, `rev = "f263ea7"`; `features = ["winit", "headless", "capture", "glow"]` | do not PR a pin bump from this extract |
 
 `capture` is the right local set for `inner_cone --export`. A `qga_gpu` `main`
 push can change record layout or feature defaults while `inner_cone`’s path
-dep stays frozen to the sibling tree. Leave the engine git float until
-`qga-app` pins `rev = "f263ea7"` (or the lock sha). After that, a
-record-layout change here cannot silently land in the published consumer
-while `inner_cone` stays on the sibling path.
+dep stays frozen to the sibling tree. The published pin is workspace
+`rev = "f263ea7"`, not `Cargo.lock`. GPU `main` (`5937219`) is after that
+pin. This extract does not PR a bump. After that pin, a record-layout
+change here cannot silently land in the published consumer while
+`inner_cone` stays on the sibling path.
 
 Engine scenes (lab / realm / cosmos / oam / reveal), CLI, and controls live
-in that repo’s README and `docs/SCENES.md`. Software fact of `db5194e`:
+in that repo’s README and `docs/SCENES.md`. Software fact of `cd5081a`:
 cosmos default 262 144 bodies (cap 524 288), realm 128 × 128 fibers and
 256² terrain. Space on cosmos hides HUD tabs; it does not pause. This crate
 does not implement those scenes.
@@ -309,7 +312,7 @@ Software fact:
 
 | Repo | Role |
 |------|------|
-| [`qga_engine`](https://github.com/kinaar8340/qga_engine) | Scenes, math, sim. Git-depends on this crate. `main` @ `db5194e` |
+| [`qga_engine`](https://github.com/kinaar8340/qga_engine) | Scenes, math, sim. Git-depends on this crate. `main` @ `cd5081a`, pin `rev = "f263ea7"` |
 | [`qga`](https://github.com/kinaar8340/qga) | Manuscript + Python lib (source of math) |
 | `inner_cone` | Sculpture viewer; path-depends here (`03e1fb2`) |
 
