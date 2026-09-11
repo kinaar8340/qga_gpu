@@ -804,6 +804,23 @@ impl Renderer {
         self.face.count = faces.len() as u32;
     }
 
+    /// Replace the line VB with mixed-color verts (two verts per segment).
+    /// Empty slice clears. Software fact of the upload path.
+    pub fn update_line_verts(&mut self, gpu: &GpuContext, verts: &[LineVert]) {
+        if verts.is_empty() {
+            self.line.count = 0;
+            return;
+        }
+        write_grow(
+            gpu,
+            &mut self.line,
+            bytemuck::cast_slice(verts),
+            "line-vb",
+            &mut self.stats,
+        );
+        self.line.count = verts.len() as u32;
+    }
+
     pub fn update_line_segments(
         &mut self,
         gpu: &GpuContext,
@@ -811,7 +828,7 @@ impl Renderer {
         style: LineStyle,
     ) {
         if edges.is_empty() {
-            self.line.count = 0;
+            self.update_line_verts(gpu, &[]);
             return;
         }
         let col = [style.color.x, style.color.y, style.color.z, style.opacity];
@@ -832,14 +849,7 @@ impl Renderer {
                 ]
             })
             .collect();
-        write_grow(
-            gpu,
-            &mut self.line,
-            bytemuck::cast_slice(&verts),
-            "line-vb",
-            &mut self.stats,
-        );
-        self.line.count = verts.len() as u32;
+        self.update_line_verts(gpu, &verts);
         let _ = style.width;
         let _ = style.depth_bias;
     }

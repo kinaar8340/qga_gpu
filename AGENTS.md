@@ -30,6 +30,8 @@ retain_static_fibers / write_live_fibers (hash + tube_radius no-op),
 retain_meshes (sphere/cone/torus tessellated once),
 draw_geodesic_orb(transform, color, lod),
 draw_geodesic_orb_alpha(transform, color, alpha),
+update_line_segments(edges, LineStyle) — one color, replaces the line VB,
+update_line_verts(&[LineVert]) — mixed per-vert color, replaces the line VB,
 write_particles (3-slot ring; any ready slot; skip if unchanged; never drop pending),
 upload_hubs, write_hud,
 render(gpu, cam, vis, time, capture).
